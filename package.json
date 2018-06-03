@@ -1,0 +1,15 @@
+{
+  "name": "iso-app",
+  "version": "1.0.0",
+  "description": "",
+  "author": "Mike Kovarik",
+  "license": "MIT",
+  "dependencies": {
+    "platform-detect": "latest"
+  },
+  "devDependencies": {
+    "babel-plugin-transform-class-properties": "^6.24.1",
+    "rollup": "^0.59.4",
+    "rollup-plugin-babel": "^3.0.4"
+  }
+}

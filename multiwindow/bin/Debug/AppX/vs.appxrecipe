@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Machine>DESKTOP-8116JLI</Machine>
+    <WindowsUser>Mike</WindowsUser>
+    <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
+    <TargetOsVersion>10.0</TargetOsVersion>
+    <TargetOsDescription>Windows 10.0</TargetOsDescription>
+    <SolutionConfiguration>Debug|AnyCPU</SolutionConfiguration>
+    <PackageArchitecture>neutral</PackageArchitecture>
+    <PackageIdentityName>78e83837-5859-4843-82fc-b5f28f5ee4fa</PackageIdentityName>
+    <PackageIdentityPublisher>CN=Mike</PackageIdentityPublisher>
+    <IntermediateOutputPath>C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\bld\Debug\</IntermediateOutputPath>
+    <RemoteDeploymentType>
+    </RemoteDeploymentType>
+    <PackageRegistrationPath>
+    </PackageRegistrationPath>
+    <RemoveNonLayoutFiles>true</RemoveNonLayoutFiles>
+    <DeployOptionalPackages>false</DeployOptionalPackages>
+    <WindowsSdkPath>
+    </WindowsSdkPath>
+    <LayoutDir>C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\bin\Debug\AppX</LayoutDir>
+    <RegisteredManifestChecksum>C66D41BB1897E40FE2630004F204DF8905AA20ED0546865E3585F9711B703235</RegisteredManifestChecksum>
+    <RegisteredPackageMoniker>78e83837-5859-4843-82fc-b5f28f5ee4fa_1.0.0.0_neutral__dg3rhm3j3sdc0</RegisteredPackageMoniker>
+    <RegisteredUserModeAppID>78e83837-5859-4843-82fc-b5f28f5ee4fa_dg3rhm3j3sdc0!App</RegisteredUserModeAppID>
+    <RegisteredPackageID>78e83837-5859-4843-82fc-b5f28f5ee4fa</RegisteredPackageID>
+    <RegisteredPackagePublisher>CN=Mike</RegisteredPackagePublisher>
+    <RegisteredVersion>1.0.0.0</RegisteredVersion>
+    <JitOptimizationSuppressed>True</JitOptimizationSuppressed>
+  </PropertyGroup>
+  <ItemGroup>
+    <AppXManifest Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\bin\Debug\AppxManifest.xml">
+      <PackagePath>AppxManifest.xml</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-29T21:48:03.531</Modified>
+    </AppXManifest>
+  </ItemGroup>
+  <ItemGroup>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\index.html">
+      <PackagePath>index.html</PackagePath>
+      <Modified>2018-06-03T21:26:59.313</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\LockScreenLogo.scale-200.png">
+      <PackagePath>images\LockScreenLogo.scale-200.png</PackagePath>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\SplashScreen.scale-200.png">
+      <PackagePath>images\SplashScreen.scale-200.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\Square150x150Logo.scale-200.png">
+      <PackagePath>images\Square150x150Logo.scale-200.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\Square44x44Logo.scale-200.png">
+      <PackagePath>images\Square44x44Logo.scale-200.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\Square44x44Logo.targetsize-24_altform-unplated.png">
+      <PackagePath>images\Square44x44Logo.targetsize-24_altform-unplated.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\StoreLogo.png">
+      <PackagePath>images\StoreLogo.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\images\Wide310x150Logo.scale-200.png">
+      <PackagePath>images\Wide310x150Logo.scale-200.png</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-24T20:59:12.965</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\js\main.js">
+      <PackagePath>js\main.js</PackagePath>
+      <Modified>2018-06-03T21:37:19.568</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\css\default.css">
+      <PackagePath>css\default.css</PackagePath>
+      <Modified>2018-05-29T21:46:13.077</Modified>
+    </AppxPackagedFile>
+    <AppxPackagedFile Include="C:\Users\Mike\OneDrive\Dev\iso-app\multiwindow\bin\Debug\ReverseMap\resources.pri">
+      <PackagePath>resources.pri</PackagePath>
+      <ReRegisterAppIfChanged>true</ReRegisterAppIfChanged>
+      <Modified>2018-05-29T21:48:03.224</Modified>
+    </AppxPackagedFile>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+</Project>
