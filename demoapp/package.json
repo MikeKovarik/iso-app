@@ -1,0 +1,13 @@
+{
+  "name": "demoapp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "bg.js",
+  "window": {
+    "min_width": 400,
+    "min_height": 420
+  },
+  "dependencies": {
+    "platform-detect": "0.0.1"
+  }
+}
