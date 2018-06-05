@@ -1,10 +1,17 @@
 import platform from 'platform-detect'
 
 
-export default SuperClass => class extends SuperClass {
+if (platform.uwp) {
+	var ViewManagement = Windows.UI.ViewManagement
+	var uiSettings = new ViewManagement.UISettings()
+	var {UserInteractionMode, UIColorType} = ViewManagement
+	//var uiViewSettings = ViewManagement.UIViewSettings.getForCurrentView()
+	//var systemNavigationManager = Windows.UI.Core.SystemNavigationManager.getForCurrentView()
+}
 
-	constructor() {
-		super()
+export default class AppTheme {
+
+	setup() {
 		if (this.canDetectSystemTheme)
 			this.detectSystemTheme()
 	}

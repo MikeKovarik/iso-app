@@ -18,6 +18,10 @@ if (typeof events !== 'undefined' && events.EventEmitter !== undefined) {
 			this.listenerWrappers.set(callback, listener)
 			this.delegate.addEventListener(name, listener)
 		}
+		once(...args) {
+			// TODO. for now
+			this.on(...args)
+		}
 		removeListener(name, callback) {
 			var listener = this.listenerWrappers.get(callback)
 			if (listener) {

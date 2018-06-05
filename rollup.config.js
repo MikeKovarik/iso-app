@@ -11,13 +11,18 @@ var globals = objectFromArray(external)
 export default {
 	treeshake: false,
 	input: 'index.mjs',
-	output: {
+	output: [{
 		file: `index.js`,
 		format: 'umd',
 		name: pkg.name,
-	},
+		globals,
+	}, {
+		file: `demoapp/node_modules/iso-app/index.js`,
+		format: 'umd',
+		name: pkg.name,
+		globals,
+	}],
 	external,
-	globals,
 	plugins: [
 		babel({
 			plugins: ['transform-class-properties'],
