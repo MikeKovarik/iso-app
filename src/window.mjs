@@ -46,6 +46,9 @@ if (platform.electron) {
 		var BrowserWindow = electron.remote.BrowserWindow
 	else
 		var BrowserWindow = electron.BrowserWindow
+	// https://github.com/electron/electron/issues/3778#issuecomment-164135757
+	if (platform.hasWindow)
+		electron.remote.getCurrentWindow().removeAllListeners()
 }
 if (platform.nwjs) {
 	var AppWindow = chrome.app.window.getAll()[0].constructor
@@ -69,6 +72,13 @@ function isBrowserWindow(object) {
 function isWindow(object) {
 	return object instanceof Window
 		|| object.constructor.name === 'Window' && 'HTMLElement' in object
+}
+
+function getWindowOpener(win) {
+	if (platform.nwjs)
+		return window.opener && window.opener.opener
+	else
+		return window.opener
 }
 
 function getRandomWindowId() {
@@ -127,26 +137,18 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	
 	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into MyAppWindow instance.
 	static from(arg) {
-		//console.log('FROM', arg, nativeMap.has(arg), nativeMap)
-		if (platform.nwjs) {
-			// In NW.JS the arg might be NWWindow or Chrome's AppWIndow, use raw window object instead.
-			if (isNWWindow(arg))
-				arg = arg.window
-			else if (isAppWindow(arg))
-				arg = arg.contentWindow
+		if (typeof arg === 'string' || typeof arg === 'number') {
+			var id = parseInt(arg)
+			var appwin = activeWindows.find(appwin => appwin.id === id)
+			return appwin || new this(arg)
+		} else {
+			return nativeMap.get(arg) || new this(arg)
 		}
-		if (platform.electron) {
-			// TODO: this should handle both BrowserWindow and Window.
-		}
-		if (nativeMap.has(arg))
-			return nativeMap.get(arg)
-		else
-			return new this(arg)
 	}
 
 	constructor(arg) {
-		//console.log('new MyAppWindow() constructor')
 		super()
+		//console.log('new MyAppWindow() constructor', arg)
 		this.setup(arg)
 	}
 
@@ -160,24 +162,41 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			}
 		} else {
 			if (platform.nwjs) {
-				if (isNWWindow(arg))
+				if (isNWWindow(arg)) {
+					// Default NWWindow instance created by NW.JS APIs.
 					this.nwWindow = arg
-				else if (isAppWindow(arg))
+				} else if (isAppWindow(arg)) {
+					// Underlying Chrome's AppWindow API. Convert ti to NW.JS NWWindow.
 					this.nwWindow = nw.Window.get(arg.contentWindow)
-				else if (isWindow(arg))
+				} else if (isWindow(arg)) {
+					// Default web's Window object. Convert ti to NW.JS NWWindow.
 					this.nwWindow = nw.Window.get(arg)
+				}
 			} else if (platform.electron) {
 				if (isBrowserWindow(arg)) {
 					this.browserWindow = arg
 				} else if (isWindow(arg)) {
 					// Electron doesn't support window.opener nor any other properties linking to any other window.
-					// Only accessible window object is the current one. Everything else is either inaccessible or proxy.
+					// Only accessible window object is the current one. Everything else is either inaccessible or BrowserWindowProxy.
 					this.browserWindow = electron.remote.getCurrentWindow()
 				}
 			} else if (isWindow(arg)) {
 				this.window = arg
+				this.document = this.window.document
 			}
 			this.setupLocal()
+		}
+
+		// Store all various shapes and object pointing to the current window in a map used by
+		// static .from() method to prevent creation of new instances of the same window.
+		if (this.browserWindow)	{
+			nativeMap.set(this.browserWindow, this)
+		} else if (this.nwWindow) {
+			nativeMap.set(this.nwWindow, this)
+			nativeMap.set(this.nwWindow.appWindow, this)
+			nativeMap.set(this.nwWindow.window, this)
+		} else if (this.window) {
+			nativeMap.set(this.window, this)
 		}
 
 		// TODO: maybe reintroduce subclassed ActiveWindows that does not do any magic in
@@ -187,6 +206,15 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			console.log('this closed', this.id)
 			activeWindows.delete(this)
 		})
+		
+		this.on('minimize', e => this.minimized = true)
+		this.on('maximize', e => this.maximized = true)
+		this.on('restore', e => {
+			if (this.minimized)
+				this.minimized = false
+			else if (this.maximized)
+				this.maximized = false
+		})
 
 		// handle IDs
 		this._setupId()
@@ -195,21 +223,62 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		this.isMainProcess = false // todo: move
 	}
 
-	setupLocal() {
-
-		// TODO: in NWJS child windows are restrictied, ty to get the real window through injection
-
-		// experimental, deleteme if needed
-		if (this.window)		nativeMap.set(this.window, this)
-		if (this.browserWindow)	nativeMap.set(this.browserWindow, this)
-		if (this.nwWindow)		nativeMap.set(this.nwWindow, this)
-		
+	instantiate() {
 		// Electron and browser windows can be opened at any positing in any size.
 		// NW.JS can't so we have to reposition it after it's opened
 		if (platform.nwjs) {
 			//if (options.x !== undefined || options.y !== undefined)
 			//	this.nwWindow.moveTo(options.x, options.y)
 		}
+	}
+
+	setupLocal() {	
+
+		if (this.nwWindow) {
+			console.log('LISTENING: NWJS')
+			this.nwWindow.on('blur', e => console.log('NW blur'))
+			this.nwWindow.on('focus', e => console.log('NW focus'))
+			this.nwWindow.on('minimize', e => console.log('NW minimize'))
+			this.nwWindow.on('maximize', e => console.log('NW maximize'))
+			this.nwWindow.on('unmaximize', e => console.log('NW unmaximize'))
+			this.nwWindow.on('restore', e => console.log('NW restore'))
+			this.nwWindow.on('show', e => console.log('NW show'))
+			this.nwWindow.on('hide', e => console.log('NW hide'))
+		}
+		if (this.browserWindow) {
+			console.log('LISTENING: ELECTRON')
+			this.browserWindow.on('blur', e => console.log('EL blur'))
+			this.browserWindow.on('focus', e => console.log('EL focus'))
+			this.browserWindow.on('minimize', e => console.log('EL minimize'))
+			this.browserWindow.on('maximize', e => console.log('EL maximize'))
+			this.browserWindow.on('unmaximize', e => console.log('EL unmaximize'))
+			this.browserWindow.on('restore', e => console.log('EL restore'))
+			this.browserWindow.on('show', e => console.log('EL show'))
+			this.browserWindow.on('hide', e => console.log('EL hide'))
+		}
+		this.window = window // TODO DELETEME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		this.document = window.document // TODO DELETEME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		if (this.window) {
+			console.log('LISTENING: WEB')
+			this.window.addEventListener('blur', e => console.log('-- blur'))
+			this.window.addEventListener('focus', e => console.log('-- focus'))
+			this.document.addEventListener('visibilitychange', function() {
+				console.log(this.document.hidden ? 'hidden' : 'visible', this.document.visibilityState);
+			})
+		}
+/*
+		if (this.canDetectWindowState) {
+			this._onNativeFocus = this._onNativeFocus.bind(this)
+			this._onNativeBlur = this._onNativeBlur.bind(this)
+			this._onNativeVisibilityChange = this._onNativeVisibilityChange.bind(this)
+			window.addEventListener('focus', this._onNativeFocus)
+			window.addEventListener('blur', this._onNativeBlur)
+			document.addEventListener('visibilitychange', this._onNativeVisibilityChange)
+			//document.addEventListener('resize', this.onResize, {passive: true})
+			this._onNativeFocus()
+			this._onNativeVisibilityChange()
+		}
+*/
 
 		if (this.window) {
 			var attachWindowListeners = () => {
@@ -224,80 +293,52 @@ class MyAppWindow extends MyAppWindowSuperClass {
 				attachWindowListeners()
 		}
 
-		if (platform.electron || (platform.uwp && this.isMainWindow)) {
-			// We cannot listen on the remote objects. Fallback to reliance on their IPC feedback.
-		} else {
-			// We can access the remote window & document objects and listen on them directly.
-			//this.window.addEventListener('focus', e => console.log('focus'))
-			//this.window.addEventListener('blur', e => console.log('blur'))
-		}
-
-/*
-		console.log('this.nwWindow', this.nwWindow)
-		console.log('this.browserWindow', this.browserWindow)
-		console.log('this.window', this.window)
-		if (this.nwWindow) {
-			console.log('LISTENING: NWJS')
-			this.nwWindow.on('minimize', e => console.log('NW minimize'))
-			this.nwWindow.on('maximize', e => console.log('NW maximize'))
-			this.nwWindow.on('unmaximize', e => console.log('NW unmaximize'))
-			this.nwWindow.on('restore', e => console.log('NW restore'))
-			this.nwWindow.on('blur', e => console.log('NW blur'))
-			this.nwWindow.on('focus', e => console.log('NW focus'))
-			this.nwWindow.on('show', e => console.log('NW show'))
-			this.nwWindow.on('hide', e => console.log('NW hide'))
-		}
-		if (this.browserWindow) {
-			console.log('LISTENING: ELECTRON')
-			console.log('this.browserWindow.on', this.browserWindow.on)
-			this.browserWindow.on('minimize', e => console.log('EL minimize'))
-			this.browserWindow.on('maximize', e => console.log('EL maximize'))
-			this.browserWindow.on('unmaximize', e => console.log('EL unmaximize'))
-			this.browserWindow.on('restore', e => console.log('EL restore'))
-			this.browserWindow.on('blur', e => console.log('EL blur'))
-			this.browserWindow.on('focus', e => console.log('EL focus'))
-			this.browserWindow.on('show', e => console.log('EL show'))
-			this.browserWindow.on('hide', e => console.log('EL hide'))
-		}
-		if (this.window) {
-			console.log('LISTENING: WEB')
-			this.window.addEventListener('minimize', e => console.log('-- minimize'))
-			this.window.addEventListener('maximize', e => console.log('-- maximize'))
-			this.window.addEventListener('unmaximize', e => console.log('-- unmaximize'))
-			this.window.addEventListener('restore', e => console.log('-- restore'))
-			this.window.addEventListener('blur', e => console.log('-- blur'))
-			this.window.addEventListener('focus', e => console.log('-- focus'))
-			this.window.addEventListener('show', e => console.log('-- show'))
-			this.window.addEventListener('hide', e => console.log('-- hide'))
-		}
-*/
-		/*
-		if (platform.nwjs) {
-			this.nwWindow.on('minimize', e => this.minimized = true)
-			this.nwWindow.on('maximize', e => this.maximized = true)
-			this.nwWindow.on('restore', e => {
-				if (this.minimized)
-					this.minimized = false
-				else if (this.maximized)
-					this.maximized = false
-			})
-			
-		}
-		*/
-/*
-		if (this.canDetectWindowState) {
-			this._onNativeFocus = this._onNativeFocus.bind(this)
-			this._onNativeBlur = this._onNativeBlur.bind(this)
-			this._onNativeVisibilityChange = this._onNativeVisibilityChange.bind(this)
-			window.addEventListener('focus', this._onNativeFocus)
-			window.addEventListener('blur', this._onNativeBlur)
-			document.addEventListener('visibilitychange', this._onNativeVisibilityChange)
-			//document.addEventListener('resize', this.onResize, {passive: true})
-			this._onNativeFocus()
-			this._onNativeVisibilityChange()
-		}
-*/
 	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// WINDOW STATE HANDLERS
+	///////////////////////////////////////////////////////////////////////////
+
+	_onNativeFocus() {
+		this.focused = true
+		this.scheduleVisibilityUpdate()
+		this.emit('focus')
+	}
+
+	_onNativeBlur() {
+		this.focused = false
+		this.scheduleVisibilityUpdate()
+		this.emit('blur')
+	}
+
+	//onResize() {
+	//	console.log(
+	//		window.outerWidth, screen.width, document.documentElement.clientWidth,
+	//		window.outerHeight, screen.height, document.documentElement.clientHeight
+	//	)
+	//}
+
+	_onNativeVisibilityChange() {
+		// Note: browser's document.hidden is basically false if the browser is minimized
+		if (document.hidden) {
+			this.visibility = false
+			this.minimized = true
+		} else {
+			this.visibility = true
+			this.minimized = false
+		}
+		this.scheduleVisibilityUpdate()
+	}
+
+	scheduleVisibilityUpdate() {
+		clearTimeout(this.visibilityUpdateTimeout)
+		this.visibilityUpdateTimeout = setTimeout(this.updateVisibility, 50)
+	}
+
+
+
+
+
 
 	// string or number
 	setupRemote(id) {
@@ -312,17 +353,11 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	// - Electron never sets window.opener, not even for child windows.
 	// - UWP will not permit access (and throw) to window.sender & window.parent on remote window object.
 	get isMainWindow() {
-		try {
-			if (platform.electron) {
-				return this.id === 1
-			} else {
-				var opener = this.window.opener
-				if (platform.nwjs)
-					opener = this.window.opener && this.window.opener.opener
-				return opener === undefined || opener === null
-			}
-		} catch(err) {
-			return false
+		if (platform.electron) {
+			return this.id === 1
+		} else {
+			var opener = getWindowOpener(this.window)
+			return opener === undefined || opener === null
 		}
 	}
 
@@ -452,6 +487,13 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	getMaximumSize() {
 	}
 
+
+	close() {
+		// TODO
+		this.removeAllListeners()
+		// TODO remove all DOM listeners too
+	}
+
 }
 
 
@@ -483,8 +525,13 @@ export default class MyAppWindowExtension {
 		
 		if (platform.hasWindow) {
 			this.currentWindow = MyAppWindow.get()
-			if (!!window.opener)
-			this.parentWindow = MyAppWindow.from(window.opener) // todo reenable, throws in NWJS
+			/*
+			// NOTE: Can't directly go after window.opener due to NW.JS
+			var opener = getWindowOpener(window)
+			console.log('opener', opener)
+			if (!!opener)
+				this.parentWindow = MyAppWindow.from(opener) // todo reenable, throws in NWJS
+			*/
 		}
 		
 		if (platform.hasWindow) {
@@ -508,11 +555,11 @@ export default class MyAppWindowExtension {
 		if (platform.nwjs) {
 			chrome.app.window.getAll()
 				.map(appWindow => MyAppWindow.from(appWindow))
-				.forEach(appwin => activeWindows.add(appwin))
+				//.forEach(appwin => activeWindows.add(appwin))
 		} else if (platform.electron) {
 			electron.remote.BrowserWindow.getAllWindows()
 				.map(browserWindow => MyAppWindow.from(browserWindow))
-				.forEach(appwin => activeWindows.add(appwin))
+				//.forEach(appwin => activeWindows.add(appwin))
 		}
 	}
 
@@ -715,46 +762,6 @@ export default class MyAppWindowExtension {
 	tabletMode = undefined
 
 
-
-	///////////////////////////////////////////////////////////////////////////
-	// WINDOW STATE HANDLERS
-	///////////////////////////////////////////////////////////////////////////
-
-	_onNativeFocus() {
-		this.focused = true
-		this.scheduleVisibilityUpdate()
-		this.emit('focus')
-	}
-
-	_onNativeBlur() {
-		this.focused = false
-		this.scheduleVisibilityUpdate()
-		this.emit('blur')
-	}
-
-	//onResize() {
-	//	console.log(
-	//		window.outerWidth, screen.width, document.documentElement.clientWidth,
-	//		window.outerHeight, screen.height, document.documentElement.clientHeight
-	//	)
-	//}
-
-	_onNativeVisibilityChange() {
-		// Note: browser's document.hidden is basically false if the browser is minimized
-		if (document.hidden) {
-			this.visibility = false
-			this.minimized = true
-		} else {
-			this.visibility = true
-			this.minimized = false
-		}
-		this.scheduleVisibilityUpdate()
-	}
-
-	scheduleVisibilityUpdate() {
-		clearTimeout(this.visibilityUpdateTimeout)
-		this.visibilityUpdateTimeout = setTimeout(this.updateVisibility, 50)
-	}
 */
 }
 
