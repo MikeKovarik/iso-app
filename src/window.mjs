@@ -2,6 +2,8 @@ import platform from 'platform-detect'
 import {EventEmitter} from './EventEmitter.mjs'
 
 
+// TODO: change emit to local emit
+
 // plot twists
 // ELECTRON
 // - if we inherit electrons BrowserWindow, how to make classes for existing BrowserWindow instances?
@@ -34,7 +36,6 @@ import {EventEmitter} from './EventEmitter.mjs'
 //
 //nwWindow.window === nwWindow.appWindow.contentWindow
 
-platform.hasWindow = platform.window // TODO delete
 
 if (platform.uwp) {
 	var {ApplicationView} = Windows.UI.ViewManagement
@@ -59,14 +60,56 @@ function isAppWindow(object) {
 }
 function isNWWindow(object) {
 	return object instanceof NWWindow
-		|| object.constructor.name === 'NWWindow'
+		|| object.constructor.name === 'NWWindow' && typeof object.setAlwaysOnTop === 'function'
+}
+function isBrowserWindow(object) {
+	return object instanceof BrowserWindow
+		|| object.constructor.name === 'BrowserWindow' && typeof object.setAlwaysOnTop === 'function'
+}
+function isBrowserWindowProxy(object) {
+	return object.constructor.name === 'BrowserWindowProxy'
+		&& !!object.postMessage && !!object.focus && !!object.blur && !!object.close
 }
 function isWindow(object) {
 	return object instanceof Window
 		|| object.constructor.name === 'Window' && 'HTMLElement' in object
 }
 
-// TODO: change emit to local emit
+function getRandomWindowId() {
+	return parseInt(Date.now().toString().slice(-4))
+	//return Math.floor(Math.random() * 10000)
+}
+
+
+class OrderedSet extends Array {
+	add(item) {
+		if (this.includes(item)) return
+		this.push(item)
+		//this.emit('TODO') // TODO
+	}
+	delete(item) {
+		var index = this.indexOf(item)
+		if (index === -1) return
+		this.splice(index, 1)
+		//this.emit('TODO') // TODO
+	}
+	// Overriding builting methods to prevent further subclassing.
+	filter(callback) {
+		return [...this].filter(callback)
+	}
+	map(callback) {
+		return [...this].map(callback)
+	}
+}
+
+
+var BC_IPC = 'iso-app-ipc'
+var BC_WIN = 'iso-app-win'
+var bcIpc = new BroadcastChannel(BC_IPC) // todo deleteme
+var bcWin // todo deleteme
+var activeWindows = new OrderedSet() // todo deleteme ?
+var nativeMap = new Map()
+
 
 // TODO
 //if (platform.electron)
@@ -74,24 +117,19 @@ function isWindow(object) {
 //else
 	var MyAppWindowSuperClass = EventEmitter
 
-//static activeWindows = []
-var activeWindows// = new ActiveWindows
-// experimental, deleteme if needed
-var nativeMap = new Map
-
 class MyAppWindow extends MyAppWindowSuperClass {
 
+	// Gets MyAppWindow instance for current window.
 	static get() {
 		if (platform.nwjs)
 			return this.from(nw.Window.get())
 		else if (platform.electron)
 			return this.from(electron.remote.getCurrentWindow())
-		//else if (platform.uwp)
-		//	return this.from(ApplicationView.getForCurrentView())
 		else
 			return this.from(window)
 	}
-
+	
+	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into MyAppWindow instance.
 	static from(arg) {
 		//console.log('FROM', arg, nativeMap.has(arg), nativeMap)
 		if (platform.nwjs) {
@@ -101,6 +139,9 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			else if (isAppWindow(arg))
 				arg = arg.contentWindow
 		}
+		if (platform.electron) {
+			// TODO: this should handle both BrowserWindow and Window.
+		}
 		if (nativeMap.has(arg))
 			return nativeMap.get(arg)
 		else
@@ -108,76 +149,79 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	}
 
 	constructor(arg) {
-		console.log('new MyAppWindow() constructor')
+		//console.log('new MyAppWindow() constructor')
 		super()
+		this.setup(arg)
+	}
 
-		if (platform.nwjs) {
-			if (isAppWindow(arg))
-				arg = arg.contentWindow
-			if (isNWWindow(arg)) {
-				this.nwWindow = arg
-				this.window = this.nwWindow.window
+	async setup(arg) {
+		if (typeof arg === 'string' || typeof arg === 'number') {
+			if (platform.electron) {
+				this.browserWindow = BrowserWindow.fromId(arg.toString())
+				this.setupLocal()
+			} else {
+				this.setupRemote(arg)
+			}
+		} else {
+			if (platform.nwjs) {
+				if (isNWWindow(arg))
+					this.nwWindow = arg
+				else if (isAppWindow(arg))
+					this.nwWindow = nw.Window.get(arg.contentWindow)
+				else if (isWindow(arg))
+					this.nwWindow = nw.Window.get(arg)
+			} else if (platform.electron) {
+				if (isBrowserWindow(arg)) {
+					this.browserWindow = arg
+				} else if (isWindow(arg)) {
+					// Electron doesn't support window.opener nor any other properties linking to any other window.
+					// Only accessible window object is the current one. Everything else is either inaccessible or proxy.
+					this.browserWindow = electron.remote.getCurrentWindow()
+				} else if (isBrowserWindowProxy(arg)) {
+					// Sometimes Electron gives you proxy object with just a .postMessage() and nothing else.
+					var myid = electron.remote.getCurrentWindow().id
+					var eventName = 'iso-app-get-id'
+					arg.eval(`
+						electron.remote
+							.BrowserWindow.fromId(${myid})
+							.webContents.send('${eventName}', electron.remote.getCurrentWindow().id)
+					`)
+					var id = await new Promise(resolve => {
+						electron.ipcRenderer.on(eventName, (e, id) => resolve(id))
+					})
+					console.log('GOT the id X', id)
+					this.browserWindow = BrowserWindow.fromId(id)
+				}
 			} else if (isWindow(arg)) {
 				this.window = arg
-				this.nwWindow = nw.Window.get(this.window)
 			}
-		} else if (platform.electron) {
-			this.browserWindow = arg
-		//} else if (platform.uwp && arg instanceof ApplicationView) {
-		//	this.appView = arg
-		} else {
-			this.window = arg
+			this.setupLocal()
 		}
+
+		// TODO: maybe reintroduce subclassed ActiveWindows that does not do any magic in
+		// constructor but takes care of self removal code like this.
+		activeWindows.add(this)
+		this.once('closed', () => {
+			console.log('this closed', this.id)
+			activeWindows.delete(this)
+		})
+
+		// handle IDs
+		this._setupId()
+
+		this.isMain = false // todo: move
+		this.isMainProcess = false // todo: move
+	}
+
+	setupLocal() {
 
 		// TODO: in NWJS child windows are restrictied, ty to get the real window through injection
 
 		// experimental, deleteme if needed
-		nativeMap.set(this.window || this.browserWindow, this)
-		//activeWindows.add(this)
-		//setTimeout(() => {
-			console.log('adding', activeWindows)
-			activeWindows.add(this)
-			console.log('added', activeWindows)
-			console.log('activeWindows.length', activeWindows.length)
-			try {
-				console.log('window.app.windows.length', window.app.windows.length)
-				setTimeout(() => {
-					console.log('activeWindows.length', activeWindows.length)
-					console.log('window.app.windows.length', window.app.windows.length)
-				})
-				setTimeout(() => {
-					console.log('activeWindows.length', activeWindows.length)
-					console.log('window.app.windows.length', window.app.windows.length)
-				}, 500)
-			} catch(err) {}
-		//})
-		this.once('closed', () => {
-			console.log('this closed', this.id, this)
-			activeWindows.delete(this)
-		}) // TODO: reenable
-
-		// handle IDs
-		if (platform.electron) {
-			this.id = this.browserWindow.id
-		} else if (platform.uwp) {
-			this.id = MSApp.getViewId(this.window)
-		} else {
-			// Retrieve previous id (of the same window) after reload.
-			// window.name persists reload and doesn't spill to child windows
-			console.log('CREATING or GETTING id', this.window.name)
-			if (this.window.name) {
-				this.id = parseInt(this.window.name)
-			} else {
-				var lastId = sessionStorage.lastWindowId ? parseInt(sessionStorage.lastWindowId) : 0
-				this.id = lastId + 1
-				this.window.name = this.id
-				sessionStorage.lastWindowId = this.id
-			}
-		}
-
-		this.isMain = false // todo: move
-		this.isMainProcess = false // todo: move
-
+		if (this.window)		nativeMap.set(this.window, this)
+		if (this.browserWindow)	nativeMap.set(this.browserWindow, this)
+		if (this.nwWindow)		nativeMap.set(this.nwWindow, this)
+		
 		// Electron and browser windows can be opened at any positing in any size.
 		// NW.JS can't so we have to reposition it after it's opened
 		if (platform.nwjs) {
@@ -186,12 +230,16 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		}
 
 		if (this.window) {
-			this.window.addEventListener('load', e => {
+			var attachWindowListeners = () => {
 				// https://electronjs.org/docs/api/browser-window#event-close
 				this.window.addEventListener('beforeunload', e => this.emit('close', e))
 				// https://electronjs.org/docs/api/browser-window#event-closed
 				this.window.addEventListener('unload', e => this.emit('closed', e))
-			})
+			}
+			if (this.window.document.readyState === 'loading')
+				this.window.addEventListener('load', attachWindowListeners)
+			else
+				attachWindowListeners()
 		}
 
 		if (platform.electron || (platform.uwp && this.isMainWindow)) {
@@ -203,6 +251,45 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		}
 
 /*
+		console.log('this.nwWindow', this.nwWindow)
+		console.log('this.browserWindow', this.browserWindow)
+		console.log('this.window', this.window)
+		if (this.nwWindow) {
+			console.log('LISTENING: NWJS')
+			this.nwWindow.on('minimize', e => console.log('NW minimize'))
+			this.nwWindow.on('maximize', e => console.log('NW maximize'))
+			this.nwWindow.on('unmaximize', e => console.log('NW unmaximize'))
+			this.nwWindow.on('restore', e => console.log('NW restore'))
+			this.nwWindow.on('blur', e => console.log('NW blur'))
+			this.nwWindow.on('focus', e => console.log('NW focus'))
+			this.nwWindow.on('show', e => console.log('NW show'))
+			this.nwWindow.on('hide', e => console.log('NW hide'))
+		}
+		if (this.browserWindow) {
+			console.log('LISTENING: ELECTRON')
+			console.log('this.browserWindow.on', this.browserWindow.on)
+			this.browserWindow.on('minimize', e => console.log('EL minimize'))
+			this.browserWindow.on('maximize', e => console.log('EL maximize'))
+			this.browserWindow.on('unmaximize', e => console.log('EL unmaximize'))
+			this.browserWindow.on('restore', e => console.log('EL restore'))
+			this.browserWindow.on('blur', e => console.log('EL blur'))
+			this.browserWindow.on('focus', e => console.log('EL focus'))
+			this.browserWindow.on('show', e => console.log('EL show'))
+			this.browserWindow.on('hide', e => console.log('EL hide'))
+		}
+		if (this.window) {
+			console.log('LISTENING: WEB')
+			this.window.addEventListener('minimize', e => console.log('-- minimize'))
+			this.window.addEventListener('maximize', e => console.log('-- maximize'))
+			this.window.addEventListener('unmaximize', e => console.log('-- unmaximize'))
+			this.window.addEventListener('restore', e => console.log('-- restore'))
+			this.window.addEventListener('blur', e => console.log('-- blur'))
+			this.window.addEventListener('focus', e => console.log('-- focus'))
+			this.window.addEventListener('show', e => console.log('-- show'))
+			this.window.addEventListener('hide', e => console.log('-- hide'))
+		}
+*/
+		/*
 		if (platform.nwjs) {
 			this.nwWindow.on('minimize', e => this.minimized = true)
 			this.nwWindow.on('maximize', e => this.maximized = true)
@@ -212,8 +299,10 @@ class MyAppWindow extends MyAppWindowSuperClass {
 				else if (this.maximized)
 					this.maximized = false
 			})
+			
 		}
-
+		*/
+/*
 		if (this.canDetectWindowState) {
 			this._onNativeFocus = this._onNativeFocus.bind(this)
 			this._onNativeBlur = this._onNativeBlur.bind(this)
@@ -227,6 +316,12 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		}
 */
 	}
+
+	// string or number
+	setupRemote(id) {
+		this.id = parseInt(id)
+	}
+
 
 	// WARNINGS:
 	// - Chrome uses null, Edge uses undefined.
@@ -247,6 +342,43 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		} catch(err) {
 			return false
 		}
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// IDENTITY
+	///////////////////////////////////////////////////////////////////////////
+
+	_setupId() {
+		if (this.id !== undefined) return
+		this.id = 0
+		if (platform.electron) {
+			this.id = this.browserWindow.id
+		} else if (this.nwWindow && this.nwWindow.appWindow.id) {
+			this.id = parseInt(this.nwWindow.appWindow.id)
+		} else if (this.window && platform.uwp) {
+			this.id = MSApp.getViewId(this.window)
+		} else if (this.window && this.window.name) {
+			this.id = parseInt(this.window.name)
+		} else {
+			this.id = getRandomWindowId()
+		}
+	}
+
+	get title() {
+		if (platform.uwp)
+			return this.appView.title
+		else if (document.title === '' && platform.nwjs)
+			return this.nwWindow.title
+		else
+			return document.title
+	}
+	set title(newTitle) {
+		if (platform.uwp)
+			this.appView.title = newTitle
+		else
+			document.title = newTitle
+		// https://electronjs.org/docs/api/browser-window#event-page-title-updated
+		this.emit('page-title-updated')
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -316,19 +448,25 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	get minHeight() {} // TODO
 	set minHeight(newValue) {} // TODO
 
+	// https://electronjs.org/docs/api/browser-window#winsetminimumsizewidth-height
 	setMinimumSize(width, height) {
 		// TODO
 		if (platform.uwp)
 			appView.setPreferredMinSize({width, height})
 	}
+
+	// https://electronjs.org/docs/api/browser-window#wingetminimumsize
 	getMinimumSize() {
 	}
 
+	// https://electronjs.org/docs/api/browser-window#winsetmaximumsizewidth-height
 	setMaximumSize(width, height) {
 		// TODO
 		if (platform.uwp)
 			appView.setPreferredMaxSize({width, height}) // is this a thing?
 	}
+
+	// https://electronjs.org/docs/api/browser-window#wingetmaximumsize
 	getMaximumSize() {
 	}
 
@@ -349,97 +487,6 @@ window.MyAppWindow = MyAppWindow // todo delete
 
 
 
-class OrderedSet extends Array {
-	add(item) {
-		if (this.includes(item)) return
-		this.push(item)
-		//this.emit('TODO') // TODO
-	}
-	delete(item) {
-		console.log('delete', item)
-		var index = this.indexOf(item)
-		if (index === -1) return
-		this.splice(index, 1)
-		//this.emit('TODO') // TODO
-	}
-	// Overriding builting methods to prevent further subclassing.
-	filter(callback) {
-		return [...this].filter(callback)
-	}
-	map(callback) {
-		return [...this].map(callback)
-	}
-}
-
-var winKeyEcho = 'iso-app-echo'
-var winKeyScan = 'iso-app-scan'
-class ActiveWindows extends OrderedSet {
-	constructor() {
-		super()
-		console.log('new ActiveWindows()')
-		if (platform.hasWindow) {
-			this.useStorageEvents = false
-			//this.useStorageEvents = !platform.nwjs && !platform.electron
-			//this.update()
-			//setTimeout(() => this.update())
-			if (this.useStorageEvents) {
-				window.addEventListener('storage', e => this.onStorageEvent(e))
-				// announce self to other existing windows
-				var windowId = 42
-				var currentlyOpened = 1
-				localStorage.setItem(winKeyEcho, [windowId, currentlyOpened, Math.random()].join('|'))
-			}
-		}
-	}
-	update() {
-		//console.log('ActiveWindows.update()')
-		if (!platform.hasWindow) return
-		if (platform.nwjs) {
-			chrome.app.window.getAll()
-				.map(appWindow => MyAppWindow.from(appWindow))
-				.forEach(win => this.add(win))
-		} else if (platform.electron) {
-			electron.remote.BrowserWindow.getAllWindows()
-				.map(browserWindow => MyAppWindow.from(browserWindow))
-				.forEach(win => this.add(win))
-		} else if (this.useStorageEvents) {
-			localStorage.setItem(winKeyScan, Math.random())
-		}
-	}
-	inject(remoteWindow) {
-		//console.log('ActiveWindows.inject()')
-		// TODO
-	}
-	traverse() {
-		this.forEach(win => {
-			var nativeWindow = win.window
-			while (!!nativeWindow) {
-				var newWin = MyAppWindow.from(nativeWindow)
-				console.log('found', newWin)
-				nativeWindow = nativeWindow.opener
-			}
-		})
-	}
-	onStorageEvent(e) {
-		console.log('ActiveWindows.onStorageEvent()')
-		if (e.key !== winKeyEcho) return
-		let [windowId, currentlyOpened] = e.newValue.split('|').map(Number)
-		//var win = MyAppWindow.from(e.target)
-		//console.log('announcement from', windowId, currentlyOpened, win)
-		console.log('announcement')
-		this.update()
-	}
-}
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -449,18 +496,69 @@ export default class MyAppWindowExtension {
 
 	setup() {
 		console.log('MyAppWindowExtension.setup()')
-		activeWindows = new ActiveWindows
-		activeWindows.update()
+		activeWindows = new OrderedSet
 		this.windows = activeWindows
-		//this.windows = []
-
+		
 		if (platform.hasWindow) {
-			//if (!!window.opener)
-			//	MyAppWindow.from(window.opener) // todo reenable, throws in NWJS
 			this.currentWindow = MyAppWindow.get()
-			//this.mainWindow = MyAppWindow.get()
-			//this.windows.push(this.mainWindow) // todo. reenable if needed
+			if (!!window.opener)
+			this.parentWindow = MyAppWindow.from(window.opener) // todo reenable, throws in NWJS
 		}
+		
+		if (platform.hasWindow) {
+			this._updateWindows()
+		}
+
+		// TODO: some advanced logic to detect if and when to open broadcast channel
+		// why? we don't want unnecessary event emitting if the app only ever uses single window and no
+		// background process (most UWP and NW.JS* apps).
+		// Do not open BC if this is the main window (and somehow detect if there's a background process running, if so, open BC)
+		// Open BC if this window was opened by something else
+		// Open BC if this window is opening a new one (and BC isn't yet open)
+		// IMPORTANT: we also need to open BC to probe surrounding when window starts (reloads)
+		//this.openBroadcastChannel() // TODO
+
+	}
+
+	_updateWindows() {
+		//console.log('ActiveWindows.update()')
+		if (!platform.hasWindow) return
+		if (platform.nwjs) {
+			chrome.app.window.getAll()
+				.map(appWindow => MyAppWindow.from(appWindow))
+				.forEach(appwin => activeWindows.add(appwin))
+		} else if (platform.electron) {
+			electron.remote.BrowserWindow.getAllWindows()
+				.map(browserWindow => MyAppWindow.from(browserWindow))
+				.forEach(appwin => activeWindows.add(appwin))
+		}
+	}
+
+	openBroadcastChannel() {
+		console.log('openBroadcastChannel()', this.id)
+		window.bcWin = bcWin = new BroadcastChannel(BC_WIN)
+		bcIpc.onmessage = e => log('IPC Received', e.data)
+		bcWin.onmessage = e => log('WIN received', e.data)
+		var oldEmit = this.currentWindow.emit
+		/*this.currentWindow.emit = (event, ...args) => {
+			this.sendWin(event, ...args)
+			oldEmit.call(this.currentWindow, event, ...args)
+		}*/
+		console.log('sending ipc')
+		this.sendIpc(`Hai, I'm alive ${this.currentWindow.id}`)
+		this.sendWin('ready')
+	}
+	
+	sendIpc(name, data) {
+		var from = this.currentWindow.id
+		var obj = {
+			isoAppMsg: {name, data, from}
+		}
+		bcIpc.postMessage(obj)
+	}
+	sendWin(name, data) {
+		var id
+		bcWin.postMessage({id, name, data})
 	}
 
 
@@ -475,7 +573,7 @@ export default class MyAppWindowExtension {
 	}
 
 	// instance of MyAppWindow(window.opener). Uses window.opener where available (except for UWP and Electron)
-	parentWindow = undefined
+	parentWindow = undefined // todo
 
 	//get mainWindow() {
 	//	return this.windows[0]
@@ -484,34 +582,6 @@ export default class MyAppWindowExtension {
 	//	// TODO
 	//	return this.windows[0]
 	//}
-
-	get title() {
-		if (platform.uwp)
-			return this.appView.title
-		else if (document.title === '' && platform.nwjs)
-			return this.nwWindow.title
-		else
-			return document.title
-	}
-	set title(newTitle) {
-		if (platform.uwp)
-			this.appView.title = newTitle
-		else
-			document.title = newTitle
-		// https://electronjs.org/docs/api/browser-window#event-page-title-updated
-		this.emit('page-title-updated')
-	}
-
-	//get id() {
-	//	if (platform.uwp)
-	//		return this.appView.id
-	//}
-
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// STATE & VISIBILITY
-	///////////////////////////////////////////////////////////////////////////
 
 	_createWindow(url, options) {
 		console.log('_createWindow', url, options)
@@ -522,28 +592,24 @@ export default class MyAppWindowExtension {
 			browserWindow.loadURL(url)
 			//resolve(browserWindow)
 			return new MyAppWindow(browserWindow)
-		} else if (platform.nwjs) {
-			// TODO. MOVE THIS TO CONSTUCTOR
-			nw.Window.open(url, options, nwWindow => {
-				console.log('nwWindow', nwWindow)
-				if (options.x !== undefined || options.y !== undefined)
-					nwWindow.moveTo(options.x, options.y)
-				// TODO. return nwWindow
-				//resolve(nwWindow)
-				return new MyAppWindow(nwWindow)
-			})
 		} else {
-			var optionsString = stringifyWindowOptions(options)
-			var id = this.currentWindow.id + 1 // TODO
-			var win = window.open(url, id, optionsString)
-			// todo: experimental, delete if needed
-			win.addEventListener('load', e => {
-				var remoteApp = win['iso-app']
-				if (remoteApp)
-					remoteApp.windows.inject(window)
-			})
-			//resolve(win)
-			return new MyAppWindow(win)
+			var id = getRandomWindowId()
+			if (platform.nwjs) {
+				// TODO. MOVE THIS TO CONSTUCTOR
+				options.id = id.toString()
+				nw.Window.open(url, options, nwWindow => {
+					if (options.x !== undefined || options.y !== undefined)
+						nwWindow.moveTo(options.x, options.y)
+					// TODO. return nwWindow
+					//resolve(nwWindow)
+					return new MyAppWindow(nwWindow)
+				})
+			} else {
+				var optionsString = stringifyWindowOptions(options)
+				var newWindow = window.open(url, id.toString(), optionsString)
+				//resolve(newWindow)
+				return new MyAppWindow(newWindow)
+			}
 		}
 	}
 
@@ -559,6 +625,8 @@ export default class MyAppWindowExtension {
 		var win = this._createWindow(url, options)
 		return win
 	}
+
+/*
 
 	// Closes and kills app's (main) window
 	close(id) {
@@ -705,7 +773,7 @@ export default class MyAppWindowExtension {
 		clearTimeout(this.visibilityUpdateTimeout)
 		this.visibilityUpdateTimeout = setTimeout(this.updateVisibility, 50)
 	}
-
+*/
 }
 
 
