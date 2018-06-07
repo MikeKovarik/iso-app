@@ -66,10 +66,6 @@ function isBrowserWindow(object) {
 	return object instanceof BrowserWindow
 		|| object.constructor.name === 'BrowserWindow' && typeof object.setAlwaysOnTop === 'function'
 }
-function isBrowserWindowProxy(object) {
-	return object.constructor.name === 'BrowserWindowProxy'
-		&& !!object.postMessage && !!object.focus && !!object.blur && !!object.close
-}
 function isWindow(object) {
 	return object instanceof Window
 		|| object.constructor.name === 'Window' && 'HTMLElement' in object
@@ -177,20 +173,6 @@ class MyAppWindow extends MyAppWindowSuperClass {
 					// Electron doesn't support window.opener nor any other properties linking to any other window.
 					// Only accessible window object is the current one. Everything else is either inaccessible or proxy.
 					this.browserWindow = electron.remote.getCurrentWindow()
-				} else if (isBrowserWindowProxy(arg)) {
-					// Sometimes Electron gives you proxy object with just a .postMessage() and nothing else.
-					var myid = electron.remote.getCurrentWindow().id
-					var eventName = 'iso-app-get-id'
-					arg.eval(`
-						electron.remote
-							.BrowserWindow.fromId(${myid})
-							.webContents.send('${eventName}', electron.remote.getCurrentWindow().id)
-					`)
-					var id = await new Promise(resolve => {
-						electron.ipcRenderer.on(eventName, (e, id) => resolve(id))
-					})
-					console.log('GOT the id X', id)
-					this.browserWindow = BrowserWindow.fromId(id)
 				}
 			} else if (isWindow(arg)) {
 				this.window = arg
