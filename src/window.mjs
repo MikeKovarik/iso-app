@@ -181,6 +181,7 @@ class MyAppWindow extends MyAppWindowSuperClass {
 					this.browserWindow = electron.remote.getCurrentWindow()
 				}
 			} else if (isWindow(arg)) {
+				// Only in case of vanilla web (or PWAs) use raw window. Because we have nothing else to work with, duh.
 				this.window = arg
 				this.document = this.window.document
 			}
@@ -206,16 +207,17 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			console.log('this closed', this.id)
 			activeWindows.delete(this)
 		})
-		
+		/*
 		this.on('minimize', e => this.minimized = true)
 		this.on('maximize', e => this.maximized = true)
+
 		this.on('restore', e => {
 			if (this.minimized)
 				this.minimized = false
 			else if (this.maximized)
 				this.maximized = false
 		})
-
+*/
 		// handle IDs
 		this._setupId()
 
@@ -233,106 +235,105 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	}
 
 	setupLocal() {	
-
-		if (this.nwWindow) {
-			console.log('LISTENING: NWJS')
-			this.nwWindow.on('blur', e => console.log('NW blur'))
-			this.nwWindow.on('focus', e => console.log('NW focus'))
-			this.nwWindow.on('minimize', e => console.log('NW minimize'))
-			this.nwWindow.on('maximize', e => console.log('NW maximize'))
-			this.nwWindow.on('unmaximize', e => console.log('NW unmaximize'))
-			this.nwWindow.on('restore', e => console.log('NW restore'))
-			this.nwWindow.on('show', e => console.log('NW show'))
-			this.nwWindow.on('hide', e => console.log('NW hide'))
-		}
-		if (this.browserWindow) {
-			console.log('LISTENING: ELECTRON')
-			this.browserWindow.on('blur', e => console.log('EL blur'))
-			this.browserWindow.on('focus', e => console.log('EL focus'))
-			this.browserWindow.on('minimize', e => console.log('EL minimize'))
-			this.browserWindow.on('maximize', e => console.log('EL maximize'))
-			this.browserWindow.on('unmaximize', e => console.log('EL unmaximize'))
-			this.browserWindow.on('restore', e => console.log('EL restore'))
-			this.browserWindow.on('show', e => console.log('EL show'))
-			this.browserWindow.on('hide', e => console.log('EL hide'))
-		}
-		this.window = window // TODO DELETEME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		this.document = window.document // TODO DELETEME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		if (this.window) {
-			console.log('LISTENING: WEB')
-			this.window.addEventListener('blur', e => console.log('-- blur'))
-			this.window.addEventListener('focus', e => console.log('-- focus'))
-			this.document.addEventListener('visibilitychange', function() {
-				console.log(this.document.hidden ? 'hidden' : 'visible', this.document.visibilityState);
-			})
-		}
-/*
-		if (this.canDetectWindowState) {
-			this._onNativeFocus = this._onNativeFocus.bind(this)
-			this._onNativeBlur = this._onNativeBlur.bind(this)
-			this._onNativeVisibilityChange = this._onNativeVisibilityChange.bind(this)
-			window.addEventListener('focus', this._onNativeFocus)
-			window.addEventListener('blur', this._onNativeBlur)
-			document.addEventListener('visibilitychange', this._onNativeVisibilityChange)
-			//document.addEventListener('resize', this.onResize, {passive: true})
-			this._onNativeFocus()
-			this._onNativeVisibilityChange()
-		}
-*/
-
-		if (this.window) {
-			var attachWindowListeners = () => {
-				// https://electronjs.org/docs/api/browser-window#event-close
-				this.window.addEventListener('beforeunload', e => this.emit('close', e))
-				// https://electronjs.org/docs/api/browser-window#event-closed
-				this.window.addEventListener('unload', e => this.emit('closed', e))
-			}
-			if (this.window.document.readyState === 'loading')
-				this.window.addEventListener('load', attachWindowListeners)
-			else
-				attachWindowListeners()
+			this.window.addEventListener('focus', e => this.emit('focus'))
+			this.window.addEventListener('blur',  e => this.emit('blur'))
+			this._onVisibilityChange = this._onVisibilityChange.bind(this)
+			this.document.addEventListener('visibilitychange', this._onVisibilityChange)
+			this._onResize = this._onResize.bind(this)
+			this.window.addEventListener('resize', this._onResize, {passive: true})
+			// https://electronjs.org/docs/api/browser-window#event-close
+			// https://electronjs.org/docs/api/browser-window#event-closed
+			this.window.addEventListener('beforeunload', e => this.emit('close', e))
+			this.window.addEventListener('unload', e => this.emit('closed', e))
+			// Kickstart it with default values.
+			this.focused = true
+			this.visible = !this.document.hidden // rough estimate
+			this.minimized = this.document.hidden // rough estimate
+			this.maximized = this._isMaximized()
+			this.fullscreen = false // can we get initial value?
 		}
 
+		this._exposeEventStates()	
+	}
+
+	// Whether the window is focused.
+	// Shortcut for .isFocused()	
+	focused = undefined
+
+	// is true all the time, no matter if the window is minimized or not.
+	// is false when the window is explicitly hidden with .hide().
+	// Shortcut for .isVisible()	
+	visible = undefined
+
+	// Whether the window is minimized.
+	// Shortcut for .isMinimized()	
+	minimized = undefined
+
+	// Whether the window is maximized.
+	// Shortcut for .isMaximized()
+	maximized = undefined
+
+	// Whether the window is in fullscreen mode.
+	// Shortcut for .isFullScreen()
+	fullscreen = undefined
+
+	_exposeEventStates() {
+		// https://electronjs.org/docs/api/browser-window#event-blur
+		// https://electronjs.org/docs/api/browser-window#event-focus
+		this.on('blur',  e => this.focused = false)
+		this.on('focus', e => this.focused = true)
+		// https://electronjs.org/docs/api/browser-window#event-show
+		// https://electronjs.org/docs/api/browser-window#event-hide
+		this.on('show', e => this.visible = true)
+		this.on('hide', e => this.visible = false)
+		// https://electronjs.org/docs/api/browser-window#event-maximize
+		// https://electronjs.org/docs/api/browser-window#event-unmaximize
+		this.on('maximize',   e => this.maximized = true)
+		this.on('unmaximize', e => this.maximized = false)
+		// https://electronjs.org/docs/api/browser-window#event-minimize
+		// https://electronjs.org/docs/api/browser-window#event-restore
+		this.on('minimize', e => this.minimized = true)
+		this.on('restore',  e => this.minimized = false)
+		// https://electronjs.org/docs/api/browser-window#event-enter-full-screen
+		// https://electronjs.org/docs/api/browser-window#event-leave-full-screen
+		this.on('enter-full-screen', e => this.fullscreen)
+		this.on('leave-full-screen', e => this.fullscreen)
 	}
 
 	///////////////////////////////////////////////////////////////////////////
 	// WINDOW STATE HANDLERS
 	///////////////////////////////////////////////////////////////////////////
 
-	_onNativeFocus() {
-		this.focused = true
-		this.scheduleVisibilityUpdate()
-		this.emit('focus')
+
+	// https://electronjs.org/docs/api/browser-window#event-minimize
+	// https://electronjs.org/docs/api/browser-window#event-restore
+	_onVisibilityChange() {
+		// NOTE: Browser's document.hidden is false when the browser is minimized.
+		if (this.document.hidden && !this.minimized)
+			this.emit('minimize')
+		else if (!this.document.hidden && this.minimized)
+			this.emit('restore')
 	}
 
-	_onNativeBlur() {
-		this.focused = false
-		this.scheduleVisibilityUpdate()
-		this.emit('blur')
+	// NOTE: solely based on window object which is quirky at best. Do not use if there's better API available in NW.JS or Electron.
+	_isMaximized() {
+		var adjustment = platform.edge ? 16 : 0
+		return (this.window.outerWidth - adjustment === this.window.screen.availWidth)
+			&& (this.window.outerHeight - adjustment === this.window.screen.availHeight)
+		//var docEl = document.documentElement
+		//console.log(window.outerWidth, window.outerWidth - 16, screen.width, window.innerWidth, docEl.clientWidth, screen.availWidth)
+		//console.log(window.outerHeight, window.outerHeight - 16, screen.height, window.innerHeight, docEl.clientHeight, screen.availHeight)
+		//console.log('window.screenX', window.screenX)
+		//console.log('window.screenY', window.screenY)
 	}
 
-	//onResize() {
-	//	console.log(
-	//		window.outerWidth, screen.width, document.documentElement.clientWidth,
-	//		window.outerHeight, screen.height, document.documentElement.clientHeight
-	//	)
-	//}
-
-	_onNativeVisibilityChange() {
-		// Note: browser's document.hidden is basically false if the browser is minimized
-		if (document.hidden) {
-			this.visibility = false
-			this.minimized = true
-		} else {
-			this.visibility = true
-			this.minimized = false
-		}
-		this.scheduleVisibilityUpdate()
-	}
-
-	scheduleVisibilityUpdate() {
-		clearTimeout(this.visibilityUpdateTimeout)
-		this.visibilityUpdateTimeout = setTimeout(this.updateVisibility, 50)
+	_onResize() {
+		var maximized = this._isMaximized()
+		if (maximized && !this.maximized)
+			this.emit('maximize')
+		else if (!maximized && this.maximized)
+			this.emit('unmaximize')
 	}
 
 
@@ -440,7 +441,110 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			this.nwWindow.height = newValue
 	}
 
+	// Proprietary alias for .setSize()
 	resize(width, height) {
+		this.setSize(width, height)
+	}
+
+	get minWidth() {} // TODO
+	set minWidth(newValue) {} // TODO
+
+	get minHeight() {} // TODO
+	set minHeight(newValue) {} // TODO
+
+
+	close() {
+		// TODO
+		this.removeAllListeners()
+		// TODO remove all DOM listeners too
+	}
+
+}
+
+
+window.MyAppWindow = MyAppWindow // todo delete
+
+
+
+
+
+class BrowserWindowAdditionalPolyfill {
+
+	///////////////////////////////////////////////////////////////////////////
+	// STATE
+	///////////////////////////////////////////////////////////////////////////
+
+	destroy() {
+	}
+
+	close() {
+		if (this.nwWindow) this.nwWindow.close()
+	}
+
+
+	///////////////////////////////////////////////////////////////////////////
+	// VISIBILITY
+	///////////////////////////////////////////////////////////////////////////
+
+	// https://electronjs.org/docs/api/browser-window#winisfocused
+	isFocused() {return this.focused}
+
+	// True all the times except when .hide() is called.
+	// https://electronjs.org/docs/api/browser-window#winisvisible
+	isVisible() {return this.visible}
+
+	// https://electronjs.org/docs/api/browser-window#winismaximized
+	isMaximized() {return this.maximized}
+
+	// https://electronjs.org/docs/api/browser-window#winisminimized
+	isMinimized() {return this.minimized}
+
+	// https://electronjs.org/docs/api/browser-window#winisfullscreen
+	isFullScreen() {return this.fullscreen}
+
+	// https://electronjs.org/docs/api/browser-window#winisresizable
+	isResizeable() {}
+
+	focus() {
+	}
+
+	blur() {
+	}
+
+	show() {
+		if (this.nwWindow) this.nwWindow.show()
+	}
+
+	hide() {
+		if (this.nwWindow) this.nwWindow.hide()
+	}
+
+	maximize() {
+		if (this.nwWindow) this.nwWindow.maximize()
+	}
+
+	unmaximize() {
+		if (this.nwWindow) this.nwWindow.unmaximize()
+	}
+
+	minimize() {
+		if (this.nwWindow) this.nwWindow.minimize()
+	}
+
+	restore() {
+		if (this.nwWindow) this.nwWindow.restore()
+	}
+
+	setFullScreen(flag) {
+	}
+
+
+	///////////////////////////////////////////////////////////////////////////
+	// POSITION & SIZE
+	///////////////////////////////////////////////////////////////////////////
+
+	// https://electronjs.org/docs/api/browser-window#winsetsizewidth-height
+	setSize(width, height) {
 		if (platform.uwp) {
 			this.appView.tryResizeView({width, height}) // it can fail
 		} else {
@@ -459,11 +563,10 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		*/
 	}
 
-	get minWidth() {} // TODO
-	set minWidth(newValue) {} // TODO
-
-	get minHeight() {} // TODO
-	set minHeight(newValue) {} // TODO
+	// https://electronjs.org/docs/api/browser-window#wingetsize
+	getSize() {
+		return [this.width, this.height]
+	}
 
 	// https://electronjs.org/docs/api/browser-window#winsetminimumsizewidth-height
 	setMinimumSize(width, height) {
@@ -487,21 +590,14 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	getMaximumSize() {
 	}
 
-
-	close() {
-		// TODO
-		this.removeAllListeners()
-		// TODO remove all DOM listeners too
-	}
-
 }
 
-
-window.MyAppWindow = MyAppWindow // todo delete
-
-
-
-
+Object.getOwnPropertyNames(BrowserWindowAdditionalPolyfill.prototype)
+	.filter(name => name !== 'constructor')
+	.forEach(name => {
+		if (!MyAppWindow.prototype[name])
+			MyAppWindow.prototype[name] = BrowserWindowAdditionalPolyfill.prototype[name]
+	})
 
 
 
@@ -519,19 +615,16 @@ window.MyAppWindow = MyAppWindow // todo delete
 export default class MyAppWindowExtension {
 
 	setup() {
-		console.log('MyAppWindowExtension.setup()')
+		//console.log('MyAppWindowExtension.setup()')
 		activeWindows = new OrderedSet
 		this.windows = activeWindows
 		
 		if (platform.hasWindow) {
 			this.currentWindow = MyAppWindow.get()
-			/*
 			// NOTE: Can't directly go after window.opener due to NW.JS
 			var opener = getWindowOpener(window)
-			console.log('opener', opener)
 			if (!!opener)
 				this.parentWindow = MyAppWindow.from(opener) // todo reenable, throws in NWJS
-			*/
 		}
 		
 		if (platform.hasWindow) {
@@ -595,22 +688,21 @@ export default class MyAppWindowExtension {
 	// PROPERTIES
 	///////////////////////////////////////////////////////////////////////////
 
-	// instance of MyAppWindow() wrap around the initial first window opened
-	get isMainWindow() {
-		return false
-		//return this.currentWindow.isMainWindow
+	//
+	get mainWindow() {
+		return this.windows.find(win => win.isMainWindow)
 	}
 
 	// instance of MyAppWindow(window.opener). Uses window.opener where available (except for UWP and Electron)
 	parentWindow = undefined // todo
 
-	//get mainWindow() {
-	//	return this.windows[0]
-	//}
-	//get currentWindow() {
-	//	// TODO
-	//	return this.windows[0]
-	//}
+	//
+	mainWindow = undefined // todo
+
+	// instance of MyAppWindow() wrap around the initial first window opened
+	get isMainWindow() {
+		return this.currentWindow.isMainWindow
+	}
 
 	_createWindow(url, options) {
 		console.log('_createWindow', url, options)
@@ -655,114 +747,9 @@ export default class MyAppWindowExtension {
 		return win
 	}
 
-/*
-
-	// Closes and kills app's (main) window
-	close(id) {
-		if (id !== undefined) {
-		} else {
-			// TODO: close given id
-			if (platform.nwjs) this.nwWindow.close()
-		}
-	}
-
-	// Shows the app's window and adds it to taskbar
-	show() {
-		if (platform.nwjs) this.nwWindow.show()
-	}
-
-	// Hides the app's window and removes it from taskbar
-	hide() {
-		if (platform.nwjs) this.nwWindow.hide()
-	}
-
-	focus() {
-		// TODO
-	}
-
-	blur() {
-		// TODO. is this even possible?
-	}
-
-	// Describes wheter app window is selected; active; is being interacted with; pressing keys would affect it.
-	focused = undefined
-	//document.hasFocus()
-
-	// Opposide of focused. Is true when the window is not in focus and interacted with. Winow might or might not be visible.
-	get blurred() {return !this.focused}
-	set blurred(newValue) {this.focused = !newValue}
-	
-	// Describes wheter app window (or browser window) can be seen on display
-	// If true  the app window is opened and visible
-	// If false the app window is opened but cannot be seen, most likely minimized
-	// Is affected by window visibility manipulation, minimizing or restoring, .hide() and .show()
-	visible = undefined
-
-	// Describes wheter app window exists (regardless of visibility)
-	// If true  the app window is opened and visible
-	// If false the app window is not opened and is not in taskbar, most likely running in tray
-	// Is only affected by .hide() and .show()
-	get shown() {return !this.hidden}
-	set shown(newValue) {this.hidden = !newValue}
-
-	// Describes wheter app window exists (regardless of visibility)
-	// If true  the app window is not opened and is not in taskbar, most likely running in tray
-	// If false the app window is opened and visible
-	// Is only affected by .hide() and .show()
-	hidden = undefined
-
-
-
-
-	minimize() {
-		if (platform.nwjs) this.nwWindow.minimize()
-	}
-
-	maximize() {
-		if (platform.nwjs) this.nwWindow.maximize()
-	}
-
-	// (in some environments) alias for restore
-	unmaximize() {
-		if (platform.nwjs) this.nwWindow.unmaximize()
-	}
-
-	// (in some environments) alias for unmaximize
-	restore() {
-		if (platform.nwjs) this.nwWindow.restore()
-	}
-
-
-
-	get minimized() {return !!this._minimized}
-	set minimized(newValue) {
-		if (newValue && !this._minimized)
-			this.emit('minimize')
-		else if (!newValue && this._minimized)
-			this.emit('unminimize')
-		this._minimized = newValue
-	}
-
-	get maximized() {return !!this._maximized}
-	set maximized(newValue) {
-		if (newValue && !this._maximized)
-			this.emit('maximize')
-		else if (!newValue && this._maximized)
-			this.emit('unmaximize')
-		this._maximized = newValue
-	}
-
-	get fullscreen() {return !!this._fullscreen}
-	set fullscreen(newValue) {
-		this._fullscreen = newValue
-		this.emit(newValue ? 'TODO' : 'unTODO')
-	}
-
 	// TODO: this may need to be moved elsewhere
 	tabletMode = undefined
 
-
-*/
 }
 
 
