@@ -11,29 +11,46 @@ if (typeof events !== 'undefined' && events.EventEmitter !== undefined) {
 	// Custom web based implementation of EventEmitter
 	EventEmitter = class EventEmitter {
 		constructor() {
-			this.listenerWrappers = new Map
-			this.delegate = document.createDocumentFragment()
+			this._map = new Map
+		}
+		_getEventCallbacks(name) {
+			if (!this._map.has(name))
+				this._map.set(name, [])
+			return this._map.get(name)
 		}
 		on(name, callback) {
-			var listener = e => callback(e.data || e.detail)
-			this.listenerWrappers.set(callback, listener)
-			this.delegate.addEventListener(name, listener)
+			this._getEventCallbacks(name).unshift(callback)
 		}
-		once(...args) {
-			// TODO. for now
-			this.on(...args)
+		once(name, callback) {
+			var oneTimeCb = (...args) => {
+				this.removeListener(name, oneTimeCb)
+				callback(...args)
+			}
+			this.on(name, oneTimeCb)
+		}
+		removeAllListeners(name) {
+			if (name)
+				this._map.delete(name)
+			else
+				this._map.clear()
 		}
 		removeListener(name, callback) {
-			var listener = this.listenerWrappers.get(callback)
-			if (listener) {
-				this.delegate.removeEventListener(name, listener)
-				this.listenerWrappers.delete(callback)
+			remove(this._getEventCallbacks(name), callback)
+		}
+		emit(name, ...args) {
+			var callbacks = this._getEventCallbacks(name)
+			var i = callbacks.length
+			while (i--) {
+				callbacks[i](...args)
 			}
 		}
-		emit(name, detail) {
-			this.delegate.dispatchEvent(new CustomEvent(name, {detail}))
-		}
 	}
+}
+
+function remove(array, item) {
+	var index = array.indexOf(item)
+	if (index !== -1)
+		array.splice(index, 1)
 }
 
 // Times are rough, everything's trying to kill ya.
