@@ -1,3 +1,4 @@
+import platform from 'platform-detect'
 import events from 'events'
 
 
@@ -33,4 +34,24 @@ if (typeof events !== 'undefined' && events.EventEmitter !== undefined) {
 			this.delegate.dispatchEvent(new CustomEvent(name, {detail}))
 		}
 	}
+}
+
+// Times are rough, everything's trying to kill ya.
+// ES Modules are transpiled down to UMD so this hack (like i had a choice, if only there was
+// any other way to silently fail importing missing ES Module) will have to do for the time being.
+
+export var nw
+export var electron
+
+if (platform.electron) {
+	if (global && global.require)
+		electron = global.require('electron')
+	else if (typeof require === 'function')
+		electron = require('electron')
+}
+if (platform.nwjs) {
+	if (platform.hasWindow)
+		nw = window.nw || require('nw.gui')
+	else
+		nw = global.nw
 }

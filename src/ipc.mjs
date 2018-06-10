@@ -29,19 +29,39 @@ export default class AppIpc {
 		var data = e.data || e.detail
 		//e.origin
 	}
-
+/*
 	emit(data) {
 		//if (window.opener)
 		//	window.opener.postMessage(data, '*')
 	}
-
+*/
+	// todo. look at socket.io
 	broadcast(data) {
-		var endpoints = this.windows.map(appwin => appwin.window)
-		// todo. look at socket.io
+		console.log('this.windows', this.windows)
+		//var endpoints = this.windows.map(appwin => appwin.window)
+		this.windows
+			.map(appwin => appwin.window)
+			.filter(window => window)
+			.forEach(window => window.postMessage(data, '*'))
+	}
+	/*
+	broadcast(data) {
 		// to app ipc endpoints
 		if (window.opener && !this.webIpcEndpoints.includes(window.opener))
 			window.opener.postMessage(data, '*')
 		this.postMessage(data)
 	}
+	*/
 
+}
+
+export var BroadcastChannel
+
+if (global.BroadcastChannel) {
+	BroadcastChannel = global.BroadcastChannel
+} else {
+	// TODO
+	BroadcastChannel = class {
+		postMessage() {}
+	}
 }

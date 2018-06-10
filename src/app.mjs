@@ -1,21 +1,41 @@
 import platform from 'platform-detect'
-import {EventEmitter} from './EventEmitter.mjs'
+import {EventEmitter, nw, electron} from './deps.mjs'
 
+
+if (typeof self !== 'undefined' && typeof global === 'undefined')
+	self.global = self
+
+if (platform.electron) {
+	// TODO: base the class on electrons? so the electron.app.something() thing can be replace with this.something()
+	var electronApp = electron.app || electron.remote.app
+	// https://github.com/electron/electron/issues/3778#issuecomment-164135757
+	if (platform.hasWindow)
+		electron.remote.getCurrentWindow().removeAllListeners()
+}
 
 //nw.App.getDataPath() => 'C:\Users\Mike\AppData\Local\demoapp\User Data\Default'
+
 
 class App extends EventEmitter {
 
 	constructor() {
 		super()
-		this.canDetectWindowState = true
-		this.canDetectSystemTheme = true
 
 		this.workers = [] // web workers, sub processed, background tasks, fulltrust processes
 
 		var key = '__iso-app-preloaded-plugins__'
-		if (self[key])
-			self[key].forEach(this._importPlugin.bind(this))
+		if (global[key])
+			global[key].forEach(this._importPlugin.bind(this))
+
+		if (platform.electron && !platform.hasWindow) {
+			this.autoClose = true
+			// On OS X it is common for applications and their menu bar
+			// to stay active until the user quits explicitly with Cmd + Q
+			electronApp.on('window-all-closed', () => {
+				if (this.autoClose)
+					this.quit()
+			})
+		}
 	}
 
 	_importPlugin(Class) {
@@ -29,16 +49,15 @@ class App extends EventEmitter {
 	}
 
 	// Force kill the app and all it's processes.
-	kill() {
-		if (platform.nwjs)
-			nw.App.quit()
+	quit() {
+		this.emit('quit')
+		setTimeout(() => {
+			if (platform.nwjs)
+				nw.App.quit()
+			else if (platform.electron)
+				electronApp.quit()
+		})
 	}
-/*
-	get id() {
-		if (platform.uwp)
-			return this.appView.id
-	}
-*/
 
 	// this should be moved to separate processes.js file (in a way windows.js works)
 	get isMainProcess() {
@@ -70,4 +89,4 @@ export default app
 // but this is required in order to make this lib modular without forcing the plugins to
 // writing hundreds of code to handle UMD/require/ES import/import().
 // JS Modules are hell. Deal with it.
-self['__iso-app__'] = app
+global['__iso-app__'] = app
