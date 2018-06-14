@@ -9,7 +9,8 @@
   },
   "devDependencies": {
     "babel-plugin-transform-class-properties": "^6.24.1",
-    "rollup": "^0.59.4",
-    "rollup-plugin-babel": "^3.0.4"
+    "rollup": "^0.60.7",
+    "rollup-plugin-babel": "^3.0.4",
+    "rollup-plugin-notify": "0.0.2"
   }
 }

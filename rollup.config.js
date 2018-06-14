@@ -1,5 +1,6 @@
 import fs from 'fs'
 import babel from 'rollup-plugin-babel'
+import notify from 'rollup-plugin-notify'
 
 
 var pkg = JSON.parse(fs.readFileSync('package.json').toString())
@@ -24,6 +25,7 @@ export default {
 	}],
 	external,
 	plugins: [
+		notify(),
 		babel({
 			plugins: ['transform-class-properties'],
 		})
