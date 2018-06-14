@@ -1,7 +1,23 @@
 import platform from 'platform-detect'
 import {EventEmitter, nw, electron} from './deps.mjs'
 import {BroadcastChannel} from './ipc.mjs'
+import {
+	BrowserWindow,
+	ArraySet,
+	extendClass,
+	isAppWindow,
+	isNWWindow,
+	isBrowserWindow,
+	isWindow,
+	getWindowOpener,
+	getRandomWindowId,
+	sanitizeUrl,
+	arrayDiff
+} from './window-util.mjs'
 
+import {ManagedAppWindow_SizeAndPosition} from './window-SizeAndPosition.mjs'
+import {ManagedAppWindow_Polyfill} from './window-Polyfill.mjs'
+import {ManagedAppWindow_PolyfillStub} from './window-Polyfill.mjs'
 
 // TODO: change emit to local emit
 
@@ -41,87 +57,24 @@ import {BroadcastChannel} from './ipc.mjs'
 // https://github.com/nwjs/nw.js/blob/nw31/src/resources/api_nw_window.js
 
 
-if (platform.uwp) {
-	var {ApplicationView} = Windows.UI.ViewManagement
-}
-if (platform.electron) {
-	var BrowserWindow = electron.BrowserWindow || electron.remote.BrowserWindow
-}
-
-// Safe functions for detection of object type across mixed contexts (mainly in NW.JS)
-// Tried to use local context's classes and falls back to general object shape detection.
-function isAppWindow(object) {
-	return object.constructor.name === 'AppWindow'
-		&& object.innerBounds !== undefined
-		&& object.outerBounds !== undefined
-		&& object.setAlwaysOnTop !== undefined
-}
-function isNWWindow(object) {
-	return object.constructor.name === 'NWWindow'
-		&& object.appWindow !== undefined
-		&& object.setAlwaysOnTop !== undefined
-		&& object.frameId !== undefined
-		&& object.setAlwaysOnTop !== undefined
-		&& object.isKioskMode !== undefined
-		&& object.menu !== undefined
-}
-function isBrowserWindow(object) {
-	return object instanceof BrowserWindow
-		|| object.constructor.name === 'BrowserWindow' && typeof object.setAlwaysOnTop === 'function'
-}
-function isWindow(object) {
-	return object instanceof Window
-		|| object.constructor.name === 'Window' && 'HTMLElement' in object
-}
-
-function getWindowOpener(win) {
-	if (platform.nwjs)
-		return window.opener && window.opener.opener
-	else
-		return window.opener
-}
-
-function getRandomWindowId() {
-	return parseInt(Date.now().toString().slice(-4))
-	//return Math.floor(Math.random() * 10000)
-}
 
 
-class OrderedSet extends Array {
-	add(item) {
-		if (this.includes(item)) return
-		this.push(item)
-		//this.emit('TODO') // TODO
-	}
-	delete(item) {
-		var index = this.indexOf(item)
-		if (index === -1) return
-		this.splice(index, 1)
-		//this.emit('TODO') // TODO
-	}
-	// Overriding builting methods to prevent further subclassing.
-	filter(callback) {
-		return [...this].filter(callback)
-	}
-	map(callback) {
-		return [...this].map(callback)
-	}
-}
-
-
-var activeWindows = new OrderedSet() // todo deleteme ?
 var nativeMap = new Map()
+var activeWindows = new ArraySet()
+// Needed for UWP BroadcastChannel polyfill.
+if (platform.uwp)
+	BroadcastChannel._getWindowList = () => windows
 
 
 // TODO
 //if (platform.electron)
-//	var MyAppWindowSuperClass = BrowserWindow
+//	var ManagedAppWindowSuperClass = BrowserWindow
 //else
-	var MyAppWindowSuperClass = EventEmitter
+	var ManagedAppWindowSuperClass = EventEmitter
 
-class MyAppWindow extends MyAppWindowSuperClass {
+class ManagedAppWindow extends ManagedAppWindowSuperClass {
 
-	// Gets MyAppWindow instance for current window.
+	// Gets ManagedAppWindow instance for current window.
 	static get() {
 		if (platform.nwjs)
 			return this.from(nw.Window.get())
@@ -131,7 +84,7 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			return this.from(window)
 	}
 	
-	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into MyAppWindow instance.
+	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into ManagedAppWindow instance.
 	static from(arg) {
 		if (typeof arg === 'string' || typeof arg === 'number') {
 			var id = parseInt(arg)
@@ -144,18 +97,22 @@ class MyAppWindow extends MyAppWindowSuperClass {
 
 	constructor(arg) {
 		super()
-		//console.log('new MyAppWindow() constructor', arg)
+		//console.log('new ManagedAppWindow() constructor', arg)
 		this.setup(arg)
 	}
 
 	async setup(arg) {
-		//console.log('setup', arg)
+		//console.log('setup()')
+		//console.log('arg', arg)
+
+		////console.log('setup', arg)
 		if (typeof arg === 'string' || typeof arg === 'number') {
 			if (platform.electron) {
 				this.browserWindow = BrowserWindow.fromId(arg.toString())
-				this.setupLocal()
+				this._setupLocal()
 			} else {
-				this.setupRemoteFromId(arg)
+				console.log('_setupRemoteFromId(arg)', arg)
+				this._setupRemoteFromId(arg)
 			}
 		} else {
 			if (platform.nwjs) {
@@ -169,7 +126,9 @@ class MyAppWindow extends MyAppWindowSuperClass {
 					// Default web's Window object. Convert ti to NW.JS NWWindow.
 					this.nwWindow = nw.Window.get(arg)
 				}
-				this.setupLocal()
+				// TODO: reintroduce this.window and this.document
+				// needed to make title work.
+				this._setupLocal()
 			} else if (platform.electron) {
 				if (isBrowserWindow(arg)) {
 					this.browserWindow = arg
@@ -178,7 +137,7 @@ class MyAppWindow extends MyAppWindowSuperClass {
 					// Only accessible window object is the current one. Everything else is either inaccessible or BrowserWindowProxy.
 					this.browserWindow = electron.remote.getCurrentWindow()
 				}
-				this.setupLocal()
+				this._setupLocal()
 			} else if (isWindow(arg)) {
 				// Use raw web window objects only in case of vanilla web (and PWAs) because we have nothing else to work
 				// with. Duh. Also only use the the object for the window this code runs in. Other should be decoupled and
@@ -186,15 +145,24 @@ class MyAppWindow extends MyAppWindowSuperClass {
 				// to each one. Plus there are the UWP limitations (that require injection).
 				if (arg === window) {
 					console.log('open this window', arg.name, arg)
-				this.window = arg
-				this.document = this.window.document
-			this.setupLocal()
+					this.window = arg
+					this.document = this.window.document
+					this._setupLocal()
 				} else {
-					console.log('open remote window', arg.name, arg)
-					this.setupRemoteFromId(arg.name)
-		}
+					try {
+						console.log('open remote window')
+						console.log('window.name', arg.name)
+						//console.log('window', arg)
+					} catch(err) {
+						console.error(err)
+					}
+					console.log('_setupRemoteFromId(arg.name)', arg.name)
+					this._setupRemoteFromId(arg.name)
+				}
 			}
 		}
+
+		//console.log('setup() B')
 
 		// Store all various shapes and object pointing to the current window in a map used by
 		// static .from() method to prevent creation of new instances of the same window.
@@ -208,6 +176,8 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			nativeMap.set(this.window, this)
 		}
 
+		//console.log('setup() C')
+
 		// TODO: maybe reintroduce subclassed ActiveWindows that does not do any magic in
 		// constructor but takes care of self removal code like this.
 		activeWindows.add(this)
@@ -218,12 +188,9 @@ class MyAppWindow extends MyAppWindowSuperClass {
 
 		// handle IDs
 		this._createId()
-
-		this.isMain = false // todo: move
-		this.isMainProcess = false // todo: move
 	}
 
-	instantiate() {
+	_instantiate() {
 		// Electron and browser windows can be opened at any positing in any size.
 		// NW.JS can't so we have to reposition it after it's opened
 		if (platform.nwjs) {
@@ -232,10 +199,11 @@ class MyAppWindow extends MyAppWindowSuperClass {
 		}
 	}
 
-	setupLocal() {	
+	_setupLocal() {	
 		if (this.window) {
-			this.window.addEventListener('focus', e => this.emit('focus'))
-			this.window.addEventListener('blur',  e => this.emit('blur'))
+			// TODO: re-enable ----------------------------------------------------------------------------------
+			//this.window.addEventListener('focus', e => this.emit('focus'))
+			//this.window.addEventListener('blur',  e => this.emit('blur'))
 			this._onVisibilityChange = this._onVisibilityChange.bind(this)
 			this.document.addEventListener('visibilitychange', this._onVisibilityChange)
 			this._onResize = this._onResize.bind(this)
@@ -247,7 +215,7 @@ class MyAppWindow extends MyAppWindowSuperClass {
 			//this.window.addEventListener('beforeunload', e => this.emit('close', e))
 			//this.window.addEventListener('unload', e => this.emit('closed', e))
 			// Kickstart it with default values.
-			this.focused = true
+			this.focused = this.document.hasFocus()
 			this.visible = !this.document.hidden // rough estimate
 			this.minimized = this.document.hidden // rough estimate
 			this.maximized = this._isMaximized()
@@ -318,9 +286,16 @@ class MyAppWindow extends MyAppWindowSuperClass {
 
 	// NOTE: solely based on window object which is quirky at best. Do not use if there's better API available in NW.JS or Electron.
 	_isMaximized() {
-		var adjustment = platform.edge ? 16 : 0
-		return (this.window.outerWidth - adjustment === this.window.screen.availWidth)
-			&& (this.window.outerHeight - adjustment === this.window.screen.availHeight)
+		var {availWidth, availHeight} = this.window.screen
+		var {outerWidth, outerHeight} = this.window
+		if (platform.edge) {
+			// Edge adds 16px to outher sizes (most of the time, though it can vary with different pixel densities)
+			return (availWidth - (outerWidth - 16)) < 2
+				&& (availHeight - (outerHeight - 16)) < 2
+		} else {
+			return (outerWidth === availWidth)
+				&& (outerHeight === availHeight)
+		}
 	}
 
 	_onResize() {
@@ -335,7 +310,7 @@ class MyAppWindow extends MyAppWindowSuperClass {
 
 
 	// string or number
-	setupRemoteFromId(id) {
+	_setupRemoteFromId(id) {
 		this.id = parseInt(id)
 	}
 
@@ -349,10 +324,11 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	get isMainWindow() {
 		if (platform.electron) {
 			return this.id === 1
-		} else {
+		} else if (this.window) {
 			var opener = getWindowOpener(this.window)
 			return opener === undefined || opener === null
 		}
+		return false
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -380,222 +356,47 @@ class MyAppWindow extends MyAppWindowSuperClass {
 	get title() {
 		if (platform.uwp)
 			return this.appView.title
-		else if (document.title === '' && platform.nwjs)
+		else if (platform.nwjs && this.document.title === '')
 			return this.nwWindow.title
-		else
-			return document.title
+		else if (this.document)
+			return this.document.title
 	}
 	set title(newTitle) {
 		if (platform.uwp)
 			this.appView.title = newTitle
-		else
-			document.title = newTitle
+		else if (this.document)
+			this.document.title = newTitle
 		// https://electronjs.org/docs/api/browser-window#event-page-title-updated
 		this.emit('page-title-updated')
 	}
 
-	///////////////////////////////////////////////////////////////////////////
-	// POSITION & SIZE
-	///////////////////////////////////////////////////////////////////////////
 
-	get x() {
-		if (platform.nwjs)
-			return this.nwWindow.x
-	}
-	set x(newValue) {
-		if (platform.nwjs)
-			this.nwWindow.x = newValue
-	}
-
-	get y() {
-		if (platform.nwjs)
-			return this.nwWindow.y
-	}
-	set y(newValue) {
-		if (platform.nwjs)
-			this.nwWindow.y = newValue
-	}
-
-	get width() {
-		if (platform.nwjs)
-			return this.nwWindow.width
-		// TODO
-	}
-	set width(newValue) {
-		if (platform.nwjs)
-			this.nwWindow.width = newValue
-		// TODO electron
-	}
-
-	get height() {
-		if (platform.nwjs)
-			return this.nwWindow.height
-		// TODO
-	}
-	set height(newValue) {
-		if (platform.nwjs)
-			this.nwWindow.height = newValue
-		// TODO electron
-	}
-
-	// Proprietary alias for .setSize()
-	resize(width, height) {
-		this.setSize(width, height)
-	}
-
-	get minWidth() {} // TODO
-	set minWidth(newValue) {} // TODO
-
-	get minHeight() {} // TODO
-	set minHeight(newValue) {} // TODO
-
-
-	close() {
-		// TODO
-		this.removeAllListeners()
-		// TODO remove all DOM listeners too
-	}
-
-}
-
-
-global.MyAppWindow = MyAppWindow // todo delete
-
-
-
-
-
-
-class BrowserWindowAdditionalPolyfill {
-
-	///////////////////////////////////////////////////////////////////////////
-	// STATE
-	///////////////////////////////////////////////////////////////////////////
 
 	destroy() {
+		this.destroyed = true
+		this.removeAllListeners()
 	}
 
 	close() {
-		if (this.nwWindow) this.nwWindow.close()
-	}
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// VISIBILITY
-	///////////////////////////////////////////////////////////////////////////
-
-	// https://electronjs.org/docs/api/browser-window#winisfocused
-	isFocused() {return this.focused}
-
-	// True all the times except when .hide() is called.
-	// https://electronjs.org/docs/api/browser-window#winisvisible
-	isVisible() {return this.visible}
-
-	// https://electronjs.org/docs/api/browser-window#winismaximized
-	isMaximized() {return this.maximized}
-
-	// https://electronjs.org/docs/api/browser-window#winisminimized
-	isMinimized() {return this.minimized}
-
-	// https://electronjs.org/docs/api/browser-window#winisfullscreen
-	isFullScreen() {return this.fullscreen}
-
-	// https://electronjs.org/docs/api/browser-window#winisresizable
-	isResizeable() {}
-
-	focus() {
-	}
-
-	blur() {
-	}
-
-	show() {
-		if (this.nwWindow) this.nwWindow.show()
-	}
-
-	hide() {
-		if (this.nwWindow) this.nwWindow.hide()
-	}
-
-	maximize() {
-		if (this.nwWindow) this.nwWindow.maximize()
-	}
-
-	unmaximize() {
-		if (this.nwWindow) this.nwWindow.unmaximize()
-	}
-
-	minimize() {
-		if (this.nwWindow) this.nwWindow.minimize()
-	}
-
-	restore() {
-		if (this.nwWindow) this.nwWindow.restore()
-	}
-
-	setFullScreen(flag) {
-	}
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// POSITION & SIZE
-	///////////////////////////////////////////////////////////////////////////
-
-	// https://electronjs.org/docs/api/browser-window#winsetsizewidth-height
-	setSize(width, height) {
-		if (platform.uwp) {
-			this.appView.tryResizeView({width, height}) // it can fail
+		// TODO
+		if (this.browserWindow) {
+			this.browserWindow.close()
+		} else if (this.nwWindow) {
+			this.nwWindow.close()
+		} else if (this.window) {
+			this.window.close()
+			// TODO remove all DOM listeners too
 		} else {
-			this.width = width
-			this.height = height
+			/*ipc.emit({
+				id: this.id,
+				method: 'close'
+			})*/
 		}
-		/*
-		//appView.setDesiredBoundsMode(Windows.UI.ViewManagement.ApplicationViewBoundsMode.useCoreWindow);
-
-		// If you want to resize the app’s window size you can try to use:
-		//appView.tryResizeView({ width: 600, height: 600 });
-
-		//Besides, if you want to resize it when the application launched, try to use this code:
-		ApplicationView.preferredLaunchViewSize = { width: 500, height: 500 };
-		ApplicationView.preferredLaunchWindowingMode = Windows.UI.ViewManagement.ApplicationViewWindowingMode.preferredLaunchViewSize;
-		*/
-	}
-
-	// https://electronjs.org/docs/api/browser-window#wingetsize
-	getSize() {
-		return [this.width, this.height]
-	}
-
-	// https://electronjs.org/docs/api/browser-window#winsetminimumsizewidth-height
-	setMinimumSize(width, height) {
-		// TODO
-		if (platform.uwp)
-			appView.setPreferredMinSize({width, height})
-	}
-
-	// https://electronjs.org/docs/api/browser-window#wingetminimumsize
-	getMinimumSize() {
-	}
-
-	// https://electronjs.org/docs/api/browser-window#winsetmaximumsizewidth-height
-	setMaximumSize(width, height) {
-		// TODO
-		if (platform.uwp)
-			appView.setPreferredMaxSize({width, height}) // is this a thing?
-	}
-
-	// https://electronjs.org/docs/api/browser-window#wingetmaximumsize
-	getMaximumSize() {
+		this.once('close', () => this.destroy())
 	}
 
 }
 
-Object.getOwnPropertyNames(BrowserWindowAdditionalPolyfill.prototype)
-	.filter(name => name !== 'constructor')
-	.forEach(name => {
-		if (!MyAppWindow.prototype[name])
-			MyAppWindow.prototype[name] = BrowserWindowAdditionalPolyfill.prototype[name]
-	})
 
 
 
@@ -607,26 +408,18 @@ Object.getOwnPropertyNames(BrowserWindowAdditionalPolyfill.prototype)
 
 
 
-
-
-
-export default class MyAppWindowExtension {
+export default class ManagedAppWindowExtension {
 
 	setup() {
-		//console.log('MyAppWindowExtension.setup()')
-		activeWindows = new OrderedSet
+		//console.log('ManagedAppWindowExtension.setup()')
 		this.windows = activeWindows
 		
 		if (platform.hasWindow) {
-			this.currentWindow = MyAppWindow.get()
-			// NOTE: Can't directly go after window.opener due to NW.JS
+			this.currentWindow = ManagedAppWindow.get()
 			var opener = getWindowOpener(window)
-			if (!!opener)
-				this.parentWindow = MyAppWindow.from(opener) // todo reenable, throws in NWJS
-		}
-		
-		if (platform.hasWindow) {
-			this._updateWindows()
+			// OMG UWP, why do you have to be like this? UWP won't give us openers name (id).
+			if (!!opener && opener.name)
+				this.parentWindow = ManagedAppWindow.from(opener) // todo reenable, throws in NWJS
 		}
 
 		// TODO: some advanced logic to detect if and when to open broadcast channel
@@ -636,30 +429,149 @@ export default class MyAppWindowExtension {
 		// Open BC if this window was opened by something else
 		// Open BC if this window is opening a new one (and BC isn't yet open)
 		// IMPORTANT: we also need to open BC to probe surrounding when window starts (reloads)
-		this.openBroadcastChannel() // TODO
+		this._bc = new BroadcastChannel('iso-app-win')
+		this._bc.onmessage = this._onBcMessage.bind(this)
+		if (platform.web)
+			this._todoBroadCastChannelMethod() // TODO
+		
+		if (platform.hasWindow) {
+			this._updateWindows()
+		}
 
 	}
 
 	_updateWindows() {
 		//console.log('ActiveWindows.update()')
-		if (!platform.hasWindow) return
-		if (platform.nwjs) {
+		if (platform.hasWindow && platform.nwjs) {
 			chrome.app.window.getAll()
-				.map(appWindow => MyAppWindow.from(appWindow))
+				.map(appWindow => ManagedAppWindow.from(appWindow))
 				//.forEach(appwin => activeWindows.add(appwin))
-		} else if (platform.electron) {
+		} else if (platform.hasWindow && platform.electron) {
 			electron.remote.BrowserWindow.getAllWindows()
-				.map(browserWindow => MyAppWindow.from(browserWindow))
+				.map(browserWindow => ManagedAppWindow.from(browserWindow))
 				//.forEach(appwin => activeWindows.add(appwin))
+		} else {
+			// Fallback to IPC. Broadcast my ID and list of IDs this window already tracks.
+			// Ideally the windows that aren't on the list will introduce themselves.
+			//var message = `${this.id}|${activeWindows.map(w => w.id)}`
+			this._sendBc({
+				_windows: activeWindows.map(w => w.id)
+			})
+			// TODO send
 		}
 	}
 
-	openBroadcastChannel() {
-		var win = this.currentWindow
+	_onBcMessage({data}) {
+		var {_from, _to} = data
+		// Safety check.
+		if (_from === undefined) return
+		if (_from === this.currentWindow.id) return
+		// Skip all messages with recipient that isn't this window.
+		if (_to !== undefined && _to !== this.currentWindow.id) return
+		console.log('----------------- RECEIVED -----------------------------------')
+		console.log(data)
+		if (Array.isArray(data._windows)) {
+			// Some other window notified us its existence (usually right after its opened or refreshed)
+			// and includes list of IDs of windows it already has access to (or knows of).
+			console.log('window echo', data._from)
+			var hisIds = data._windows
+			var myIds = this.windows.map(maw => maw.id)
+			var myMissingIds = arrayDiff(hisIds, myIds)
+			var hisMissingIds = arrayDiff(myIds, hisIds)
+			console.log('hisIds', hisIds)
+			console.log('myIds', myIds)
+			console.log('myMissingIds', myMissingIds)
+			console.log('hisMissingIds', hisMissingIds)
+			// Create new windows from IDs we've received and come to know.
+			// The ManagedAppWindow will be hollow (not based on actual web window object, because we can't get hold of it)
+			// and change its state based on broadcasted messages.
+			if (myMissingIds.length)
+				myMissingIds.map(id => ManagedAppWindow.from(id))
+			// Notify the other side of windows we know of (and have access to).
+			if (hisMissingIds.length) {
+				this._sendBc({
+					_to: _from,
+					_windows: activeWindows.map(w => w.id)
+				})
+			}
+			return
+		}
+		var maw = ManagedAppWindow.from(data._from)
+		if (data._call) {
+			// Someone wants to remotely call some function on the window it does not have handle for.
+			console.log('call', data._call, 'on', data._from)
+			maw[data._call](...(data._args || []))
+		} else if (data._event) {
+			console.log('emit event', data._event, 'on', data._from)
+			maw.emitLocal(data._event, ...(data._args || []))
+		} else if (data._heartbeat) {
+			maw._onHeartbeat()
+		} else {
+			console.log('apply snapshot of', data._from)
+			// Received new values from the remote window. Apply them to local hollow image of the window.
+			Object.keys(data)
+				.filter(key => !key.startsWith('_') && key !== 'id')
+				.forEach(key => maw[key] = data[key])
+		}
+	}
+
+	_todoBroadCastChannelMethod() {
+		var {currentWindow} = this
+		console.log(Object.getOwnPropertyNames(currentWindow))
+		console.log(Object.getOwnPropertyNames(ManagedAppWindow.prototype))
+		var set = new Set([
+			...Object.getOwnPropertyNames(currentWindow),
+			...Object.getOwnPropertyNames(ManagedAppWindow.prototype)
+		])
+		var properties = Array.from(set)
+			.filter(name => !name.startsWith('_'))
+			.filter(name => name !== 'constructor')
+			.filter(name => name !== 'setup')
+			.filter(name => name !== 'id')
+			.filter(name => name !== 'window')
+			.filter(name => name !== 'document')
+		console.log(properties)
+		for (var name of properties) {
+			var desc = Object.getOwnPropertyDescriptor(currentWindow, name)
+					|| Object.getOwnPropertyDescriptor(ManagedAppWindow.prototype, name)
+			if (typeof desc.value === 'function') {
+				console.log(name, 'function')
+				let originalFunction = desc.value
+				var origFnKey = '_' + name + '_original'
+				currentWindow[origFnKey] = desc.value
+				currentWindow[name] = (...args) => {
+					this._callRemotely(name, args)
+					currentWindow[origFnKey](...args)
+				}
+			} else if ('value' in desc) {
+				console.log(name, 'variable')
+			} else if (desc.get && desc.set) {
+				console.log(name, 'get/set')
+				let {enumerable, get, set} = desc
+				var origGetKey = '_' + name + '_getter'
+				var origSetKey = '_' + name + '_setter'
+				currentWindow[origGetKey] = get
+				currentWindow[origSetKey] = set
+				var newDesc = {
+					enumerable,
+					//get() {
+					//	return get.call(this)
+					//},
+					set: (newValue) => {
+						this._updateValue(name, newValue)
+						currentWindow[origSetKey](newValue)
+					}
+				}
+				Object.defineProperty(currentWindow, name, newDesc)
+			} else {
+				console.log(name, 'unknown')
+			}
+		}
+		//console.log(Object.getOwnPropertyDescriptor(this))
+		return
+		var win = currentWindow
 		var id = win.id
-		console.log('openBroadcastChannel()', id)
-		var bc = new BroadcastChannel('iso-app-win')
-		bc.onmessage = e => {
+		this._bc.onmessage = e => {
 			var {id, name, args} = e.data
 			//console.log('WIN received', e.data)
 			if (id === undefined)
@@ -667,18 +579,55 @@ export default class MyAppWindowExtension {
 			if (args === undefined)
 				args = []
 			//var targetWin = activeWindows.find(w => w.id === id)
-			var targetWin = MyAppWindow.from(id)
+			var targetWin = ManagedAppWindow.from(id)
 			if (targetWin.emitLocal)
 				targetWin.emitLocal(name, ...args)
 			else if (targetWin.emit)
 				targetWin.emit(name, ...args)
 		}
-		var oldEmit = this.currentWindow.emit
 		win.emitLocal = win.emit
 		win.emit = (name, ...args) => {
-			bc.postMessage({id, name, args})
-			oldEmit.call(this.currentWindow, name, ...args)
+			if (args.length) {
+				this._bc.postMessage({id, name, args})
+				win.emitLocal(name, ...args)
+			} else {
+				this._bc.postMessage({id, name})
+				win.emitLocal(name)
+			}
+		}
 	}
+
+	_sendBc(data) {
+		data._from = this.currentWindow.id
+		console.log('posting', data)
+		this._bc.postMessage(data)
+	}
+
+	_callRemotely(name, args) {
+		console.log('_callRemotely', name, args)
+		this._sendBc({
+			_call: name,
+			_args: args,
+		})
+	}
+
+	_emitRemotely(name, args) {
+		console.log('_emitRemotely', name, args)
+		this._sendBc({
+			_emit: name,
+			_args: args,
+		})
+	}
+
+	_updateValue(name, value) {
+		console.log('_updateValue', name, value)
+		this._sendBc({
+			[name]: value
+		})
+	}
+
+	_sendSelfSnapshot() {
+		// TODO
 	}
 
 
@@ -691,13 +640,13 @@ export default class MyAppWindowExtension {
 		return this.windows.find(win => win.isMainWindow)
 	}
 
-	// instance of MyAppWindow(window.opener). Uses window.opener where available (except for UWP and Electron)
+	// instance of ManagedAppWindow(window.opener). Uses window.opener where available (except for UWP and Electron)
 	parentWindow = undefined // todo
 
 	//
 	mainWindow = undefined // todo
 
-	// instance of MyAppWindow() wrap around the initial first window opened
+	// instance of ManagedAppWindow() wrap around the initial first window opened
 	get isMainWindow() {
 		return this.currentWindow.isMainWindow
 	}
@@ -708,11 +657,11 @@ export default class MyAppWindowExtension {
 		if (platform.electron) {
 			var browserWindow = new BrowserWindow(options)
 			if (url.includes('://'))
-			browserWindow.loadURL(url)
+				browserWindow.loadURL(url)
 			else
 				browserWindow.loadFile(url)
 			//resolve(browserWindow)
-			return new MyAppWindow(browserWindow)
+			return new ManagedAppWindow(browserWindow)
 		} else {
 			var id = getRandomWindowId()
 			if (platform.nwjs) {
@@ -723,13 +672,23 @@ export default class MyAppWindowExtension {
 						nwWindow.moveTo(options.x, options.y)
 					// TODO. return nwWindow
 					//resolve(nwWindow)
-					return new MyAppWindow(nwWindow)
+					return new ManagedAppWindow(nwWindow)
 				})
 			} else if (platform.hasWindow) {
-				var optionsString = stringifyWindowOptions(options)
-				var newWindow = window.open(url, id.toString(), optionsString)
-				//resolve(newWindow)
-				return new MyAppWindow(newWindow)
+				try {
+					var optionsString = stringifyWindowOptions(options)
+					// WARNING: In UWP child window cannot open another one (3rd level deep). It throws as of spring 2018 update.
+					//          What works is trying to open it from parent window that can be accessed from window.opener.
+					var webWindow = window
+					if (platform.uwp && !!window.opener)
+						webWindow = window.opener
+					// Let's get the party started.
+					var newWindow = webWindow.open(url, id.toString(), optionsString)
+					//resolve(newWindow)
+					return new ManagedAppWindow(newWindow)
+				} catch(err) {
+					// Swallow the error and don't open the window.
+				}
 			}
 		}
 	}
@@ -763,6 +722,19 @@ export default class MyAppWindowExtension {
 
 
 
+global.ManagedAppWindow = ManagedAppWindow // todo delete
+
+extendClass(ManagedAppWindow, ManagedAppWindow_SizeAndPosition)
+//extendClass(ManagedAppWindow, ManagedAppWindow_Polyfill)
+//extendClass(ManagedAppWindow, ManagedAppWindow_PolyfillStub)
+
+
+
+
+
+
+
+
 
 
 function sanitizeWindowOptions(options) {
@@ -783,21 +755,4 @@ function stringifyWindowOptions(options) {
 	if (!options) return
 	return `width=${options.width},height=${options.height},left=${options.x},top=${options.y}`
 		+ ',directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no'
-}
-
-function sanitizeUrl(url) {
-	if (!url) return url
-	if (!url.includes('://')) {
-		if (platform.uwp)
-			return `ms-appx:///${url}`
-		//else if (platform.electron)
-		//	return `file://${__dirname}/${url}`
-	}
-	return url
-}
-
-function remove(array, item) {
-	var index = array.indexOf(item)
-	if (index !== -1)
-		array.splice(index, 1)
 }
