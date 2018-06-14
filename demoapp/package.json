@@ -7,7 +7,19 @@
     "min_width": 400,
     "min_height": 420
   },
+  "scripts": {
+    "electron": "electron .",
+    "electron-debug": "electron .",
+    "nw": "nw .",
+    "nw-debug": "nw --remote-debugging-port=9222 .",
+    "nw-debug2": "nw --remote-debugging-port=9222 . && start chrome \"http://localhost:9222\""
+  },
+  "chromium-args": "--enable-logging=stderr",
+  "window": {
+    "chromium-args": "--enable-logging=stderr"
+  },
   "dependencies": {
+    "iso-app": "0.0.1",
     "platform-detect": "0.0.1"
   }
 }
