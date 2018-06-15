@@ -407,7 +407,6 @@ class ManagedAppWindow extends ManagedAppWindowSuperClass {
 
 
 
-
 export default class ManagedAppWindowExtension {
 
 	setup() {
@@ -432,7 +431,7 @@ export default class ManagedAppWindowExtension {
 		this._bc = new BroadcastChannel('iso-app-win')
 		this._bc.onmessage = this._onBcMessage.bind(this)
 		if (platform.web)
-			this._todoBroadCastChannelMethod() // TODO
+			this._wrapCurrentWindowForSyncing() // TODO
 		
 		if (platform.hasWindow) {
 			this._updateWindows()
@@ -473,21 +472,16 @@ export default class ManagedAppWindowExtension {
 		if (Array.isArray(data._windows)) {
 			// Some other window notified us its existence (usually right after its opened or refreshed)
 			// and includes list of IDs of windows it already has access to (or knows of).
-			console.log('window echo', data._from)
 			var hisIds = data._windows
 			var myIds = this.windows.map(maw => maw.id)
-			var myMissingIds = arrayDiff(hisIds, myIds)
-			var hisMissingIds = arrayDiff(myIds, hisIds)
-			console.log('hisIds', hisIds)
-			console.log('myIds', myIds)
-			console.log('myMissingIds', myMissingIds)
-			console.log('hisMissingIds', hisMissingIds)
 			// Create new windows from IDs we've received and come to know.
 			// The ManagedAppWindow will be hollow (not based on actual web window object, because we can't get hold of it)
 			// and change its state based on broadcasted messages.
+			var myMissingIds = arrayDiff(hisIds, myIds)
 			if (myMissingIds.length)
 				myMissingIds.map(id => ManagedAppWindow.from(id))
 			// Notify the other side of windows we know of (and have access to).
+			var hisMissingIds = arrayDiff(myIds, hisIds)
 			if (hisMissingIds.length) {
 				this._sendBc({
 					_to: _from,
@@ -503,7 +497,11 @@ export default class ManagedAppWindowExtension {
 			maw[data._call](...(data._args || []))
 		} else if (data._event) {
 			console.log('emit event', data._event, 'on', data._from)
-			maw.emitLocal(data._event, ...(data._args || []))
+			var args = data._args || []
+			if (maw.emitLocal)
+				maw.emitLocal(name, ...args)
+			else if (maw.emit)
+				maw.emit(name, ...args)
 		} else if (data._heartbeat) {
 			maw._onHeartbeat()
 		} else {
@@ -513,86 +511,75 @@ export default class ManagedAppWindowExtension {
 				.filter(key => !key.startsWith('_') && key !== 'id')
 				.forEach(key => maw[key] = data[key])
 		}
+
 	}
 
-	_todoBroadCastChannelMethod() {
-		var {currentWindow} = this
-		console.log(Object.getOwnPropertyNames(currentWindow))
-		console.log(Object.getOwnPropertyNames(ManagedAppWindow.prototype))
-		var set = new Set([
-			...Object.getOwnPropertyNames(currentWindow),
-			...Object.getOwnPropertyNames(ManagedAppWindow.prototype)
-		])
-		var properties = Array.from(set)
-			.filter(name => !name.startsWith('_'))
-			.filter(name => name !== 'constructor')
-			.filter(name => name !== 'setup')
-			.filter(name => name !== 'id')
-			.filter(name => name !== 'window')
-			.filter(name => name !== 'document')
-		console.log(properties)
-		for (var name of properties) {
-			var desc = Object.getOwnPropertyDescriptor(currentWindow, name)
+	_wrapCurrentWindowForSyncing() {
+		let {currentWindow} = this
+		// NOTE: getOwnPropertyNames ensures we don't get EventEmitter's methods, but the plugin Classes
+		//       should not be inheriting from anything.
+		// Get list of all variables, functions and getter/setters in current window that needs to be wrapped.
+		function uniq(...items) {
+			return Array.from(new Set(items))
+		}
+		// Get both instance properties and prototype get/set & functions and 
+		let properties = uniq(
+				...Object.getOwnPropertyNames(currentWindow),
+				...Object.getOwnPropertyNames(ManagedAppWindow.prototype)
+			)
+			// Filter out all the things we don't want to sync
+			.filter(name => {
+				return !name.startsWith('_')
+					&& name !== 'constructor' && name !== 'setup'
+					&& name !== 'id' && name !== 'window' && name !== 'document'
+			})
+		// Wrap all the properties, setters and functions, intercept each call or execution and broadcast it to other windows.
+		for (let name of properties) {
+			// Get descriptor of the thing.
+			let desc = Object.getOwnPropertyDescriptor(currentWindow, name)
 					|| Object.getOwnPropertyDescriptor(ManagedAppWindow.prototype, name)
 			if (typeof desc.value === 'function') {
-				console.log(name, 'function')
-				let originalFunction = desc.value
-				var origFnKey = '_' + name + '_original'
+				// Do not sync functions that (educated guess) are just getters and do not actually change any internal value.
+				if (name.startsWith('get') && name[3] === name[3].toUpperCase()) continue
+				if (name.startsWith('is')  && name[2] === name[2].toUpperCase()) continue
+				let origFnKey = '_' + name + '_original'
 				currentWindow[origFnKey] = desc.value
 				currentWindow[name] = (...args) => {
 					this._callRemotely(name, args)
-					currentWindow[origFnKey](...args)
+					return currentWindow[origFnKey](...args)
 				}
 			} else if ('value' in desc) {
-				console.log(name, 'variable')
+				// Instance variables.
+				let {value, configurable, enumerable} = desc
+				Object.defineProperty(currentWindow, name, {
+					configurable, enumerable,
+					get: () => value,
+					set: newValue => value = newValue,
+				})
 			} else if (desc.get && desc.set) {
-				console.log(name, 'get/set')
-				let {enumerable, get, set} = desc
-				var origGetKey = '_' + name + '_getter'
-				var origSetKey = '_' + name + '_setter'
-				currentWindow[origGetKey] = get
+				// Intercept setters.
+				let {get, set, configurable, enumerable} = desc
+				let origSetKey = '_' + name + '_setter'
 				currentWindow[origSetKey] = set
-				var newDesc = {
-					enumerable,
-					//get() {
-					//	return get.call(this)
-					//},
-					set: (newValue) => {
+				Object.defineProperty(currentWindow, name, {
+					configurable, enumerable,
+					get,
+					set: newValue => {
 						this._updateValue(name, newValue)
 						currentWindow[origSetKey](newValue)
 					}
-				}
-				Object.defineProperty(currentWindow, name, newDesc)
-			} else {
-				console.log(name, 'unknown')
+				})
 			}
 		}
-		//console.log(Object.getOwnPropertyDescriptor(this))
-		return
-		var win = currentWindow
-		var id = win.id
-		this._bc.onmessage = e => {
-			var {id, name, args} = e.data
-			//console.log('WIN received', e.data)
-			if (id === undefined)
-				return
-			if (args === undefined)
-				args = []
-			//var targetWin = activeWindows.find(w => w.id === id)
-			var targetWin = ManagedAppWindow.from(id)
-			if (targetWin.emitLocal)
-				targetWin.emitLocal(name, ...args)
-			else if (targetWin.emit)
-				targetWin.emit(name, ...args)
-		}
-		win.emitLocal = win.emit
-		win.emit = (name, ...args) => {
+
+		currentWindow.emitLocal = currentWindow.emit
+		currentWindow.emit = (name, ...args) => {
 			if (args.length) {
 				this._bc.postMessage({id, name, args})
-				win.emitLocal(name, ...args)
+				currentWindow.emitLocal(name, ...args)
 			} else {
 				this._bc.postMessage({id, name})
-				win.emitLocal(name)
+				currentWindow.emitLocal(name)
 			}
 		}
 	}
@@ -705,12 +692,14 @@ export default class ManagedAppWindowExtension {
 		var win = this._createWindow(url, options)
 		var e = {} // TODO: event
 		this.emit('browser-window-created', e, win)
-		this.emit('window-created', win) // custom API, without the events
+		// custom API, without the events
+		this.emit('window-created', win)
 		return win
 	}
 
 	// TODO: this may need to be moved elsewhere
 	tabletMode = undefined
+
 
 }
 
