@@ -1,6 +1,6 @@
 import platform from 'platform-detect'
 import {EventEmitter, nw, electron} from './deps.mjs'
-import {importPlugins} from './plugin-core.mjs'
+import {registerClass} from './plugin-core.mjs'
 
 
 if (typeof self !== 'undefined' && typeof global === 'undefined')
@@ -17,14 +17,10 @@ if (platform.electron) {
 //nw.App.getDataPath() => 'C:\Users\Mike\AppData\Local\demoapp\User Data\Default'
 
 
-class App extends EventEmitter {
+var App = registerClass(class App extends EventEmitter {
 
 	constructor() {
 		super()
-
-		this.workers = [] // web workers, sub processed, background tasks, fulltrust processes
-
-		importPlugins(this)
 
 		if (platform.electron && !platform.hasWindow) {
 			this.autoClose = true
@@ -35,6 +31,8 @@ class App extends EventEmitter {
 					this.quit()
 			})
 		}
+
+		this._applyPlugins(this)
 	}
 
 	// Force kill the app and all it's processes.
@@ -67,7 +65,7 @@ class App extends EventEmitter {
 		}
 	}
 
-}
+})
 
 
 // This library is a singleton
