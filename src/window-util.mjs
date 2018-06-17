@@ -7,21 +7,6 @@ if (platform.electron) {
 	BrowserWindow = electron.BrowserWindow || electron.remote.BrowserWindow
 }
 
-// Extend class post mortem.
-export function extendClass(Target, ...Sources) {
-	for (let Source of Sources) {
-		let targetProto = Target.prototype
-		let sourceProto = Source.prototype
-		for (let name of Object.getOwnPropertyNames(sourceProto)) {
-			if (name === 'constructor') continue
-			if (!(name in targetProto)) {
-				let desc = Object.getOwnPropertyDescriptor(sourceProto, name)
-				Object.defineProperty(targetProto, name, desc)
-			}
-		}
-	}
-}
-
 // Safe functions for detection of object type across mixed contexts (mainly in NW.JS)
 // Tried to use local context's classes and falls back to general object shape detection.
 export function isAppWindow(object) {

@@ -1,7 +1,8 @@
 import platform from 'platform-detect'
+import {registerPlugin} from './plugin-core.mjs'
 
 
-export class ManagedAppWindow_SizeAndPosition {
+registerPlugin('ManagedAppWindow', class SizeAndPosition {
 
 	///////////////////////////////////////////////////////////////////////////
 	// POSITION
@@ -19,6 +20,7 @@ export class ManagedAppWindow_SizeAndPosition {
 			return [this.nwWindow.x, this.nwWindow.y]
 		else if (platform.electron)
 			return this.browserWindow.getPosition()
+		return [0, 0]
 	}
 
 	// todo move to the other class?
@@ -48,9 +50,10 @@ export class ManagedAppWindow_SizeAndPosition {
 			return this.browserWindow.getSize()
 		} else if (platform.nwjs) {
 			return [this.nwWindow.width, this.nwWindow.height]
-		} else {
+		} else if (this.window) {
 			return [this.window.outerWidth, this.window.outerHeight]
 		}
+		return [0, 0]
 	}
 
 	// https://electronjs.org/docs/api/browser-window#winsetsizewidth-height
@@ -110,4 +113,4 @@ export class ManagedAppWindow_SizeAndPosition {
 		// UWP does not support this
 	}
 
-}
+})

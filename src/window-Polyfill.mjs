@@ -1,4 +1,7 @@
-export class ManagedAppWindow_PolyfillStub {
+import {registerPlugin} from './plugin-core.mjs'
+
+
+registerPlugin('ManagedAppWindow', class ElectronStub {
 	static fromWebContents(webContents) {}
 	static fromBrowserView(browserView) {}
 	static addExtension(path) {}
@@ -13,9 +16,10 @@ export class ManagedAppWindow_PolyfillStub {
 	setAspectRatio(aspectRatio, extraSize) {}
 	previewFile(path, displayName) {}
 	closeFilePreview() {}
-}
+})
 
-export class ManagedAppWindow_Polyfill {
+
+registerPlugin('ManagedAppWindow', class ElectronPolyfill {
 
 	///////////////////////////////////////////////////////////////////////////
 	// STATIC
@@ -195,9 +199,4 @@ export class ManagedAppWindow_Polyfill {
 		return this.closable
 	}
 
-
-
-
-
-
-}
+})

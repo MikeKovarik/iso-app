@@ -1,4 +1,5 @@
 import platform from 'platform-detect'
+import {registerPlugin} from './plugin-core.mjs'
 
 
 // TODO: handle the origins and maybe app id so that other
@@ -7,7 +8,7 @@ import platform from 'platform-detect'
 
 export default class AppIpc {
 
-	setup() {
+	pluginConstructor() {
 		// Those objects that implement web's postMessage() and 'message'=>e.detail events.
 		this.webIpcEndpoints = []
 		// Those objects that implement node's send() and 'message'=>data events.
@@ -55,13 +56,4 @@ export default class AppIpc {
 
 }
 
-export var BroadcastChannel
-
-if (global.BroadcastChannel) {
-	BroadcastChannel = global.BroadcastChannel
-} else {
-	// TODO
-	BroadcastChannel = class {
-		postMessage() {}
-	}
-}
+registerPlugin(AppIpc)

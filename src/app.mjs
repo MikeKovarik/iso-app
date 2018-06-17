@@ -1,5 +1,6 @@
 import platform from 'platform-detect'
 import {EventEmitter, nw, electron} from './deps.mjs'
+import {importPlugins} from './plugin-core.mjs'
 
 
 if (typeof self !== 'undefined' && typeof global === 'undefined')
@@ -23,9 +24,7 @@ class App extends EventEmitter {
 
 		this.workers = [] // web workers, sub processed, background tasks, fulltrust processes
 
-		var key = '__iso-app-preloaded-plugins__'
-		if (global[key])
-			global[key].forEach(this._importPlugin.bind(this))
+		importPlugins(this)
 
 		if (platform.electron && !platform.hasWindow) {
 			this.autoClose = true
@@ -36,16 +35,6 @@ class App extends EventEmitter {
 					this.quit()
 			})
 		}
-	}
-
-	_importPlugin(Class) {
-		var proto = Class.prototype
-		var descriptors = Object.getOwnPropertyDescriptors(proto)
-		delete descriptors.constructor
-		delete descriptors.setup
-		Object.defineProperties(this, descriptors)
-		if (proto.setup)
-			proto.setup.call(this)
 	}
 
 	// Force kill the app and all it's processes.

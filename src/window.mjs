@@ -1,10 +1,9 @@
 import platform from 'platform-detect'
 import {EventEmitter, nw, electron} from './deps.mjs'
-import {BroadcastChannel} from './ipc.mjs'
+import {registerPlugin, importPlugins} from './plugin-core.mjs'
 import {
 	BrowserWindow,
 	ArraySet,
-	extendClass,
 	isAppWindow,
 	isNWWindow,
 	isBrowserWindow,
@@ -14,10 +13,6 @@ import {
 	sanitizeUrl,
 	arrayDiff
 } from './window-util.mjs'
-
-import {ManagedAppWindow_SizeAndPosition} from './window-SizeAndPosition.mjs'
-import {ManagedAppWindow_Polyfill} from './window-Polyfill.mjs'
-import {ManagedAppWindow_PolyfillStub} from './window-Polyfill.mjs'
 
 // TODO: change emit to local emit
 
@@ -98,14 +93,6 @@ class ManagedAppWindow extends ManagedAppWindowSuperClass {
 	constructor(arg) {
 		super()
 		//console.log('new ManagedAppWindow() constructor', arg)
-		this.setup(arg)
-	}
-
-	async setup(arg) {
-		//console.log('setup()')
-		//console.log('arg', arg)
-
-		////console.log('setup', arg)
 		if (typeof arg === 'string' || typeof arg === 'number') {
 			if (platform.electron) {
 				this.browserWindow = BrowserWindow.fromId(arg.toString())
@@ -160,6 +147,8 @@ class ManagedAppWindow extends ManagedAppWindowSuperClass {
 					this._setupRemoteFromId(arg.name)
 				}
 			}
+
+			importPlugins(this)
 		}
 
 		//console.log('setup() B')
@@ -395,7 +384,21 @@ class ManagedAppWindow extends ManagedAppWindowSuperClass {
 		this.once('close', () => this.destroy())
 	}
 
+
+	// to be deleted!
+	bark() {
+		console.log('BARK!')
+	}
+	get deleteme() {
+		return this._deleteme
+	}
+	set deleteme(newValue) {
+		this._deleteme = newValue
+	}
+
+
 }
+
 
 
 
@@ -409,7 +412,7 @@ class ManagedAppWindow extends ManagedAppWindowSuperClass {
 
 export default class ManagedAppWindowExtension {
 
-	setup() {
+	pluginConstructor() {
 		//console.log('ManagedAppWindowExtension.setup()')
 		this.windows = activeWindows
 		
@@ -428,9 +431,12 @@ export default class ManagedAppWindowExtension {
 		// Open BC if this window was opened by something else
 		// Open BC if this window is opening a new one (and BC isn't yet open)
 		// IMPORTANT: we also need to open BC to probe surrounding when window starts (reloads)
-		this._bc = new BroadcastChannel('iso-app-win')
-		this._bc.onmessage = this._onBcMessage.bind(this)
-		if (platform.web)
+		this._canSync = platform.web || platform.pwa // TODO
+
+		this._wbc = new BroadcastChannel('iso-app-win')
+		this._wbc.onmessage = this._onBcMessage.bind(this)
+
+		if (this._canSync)
 			this._wrapCurrentWindowForSyncing() // TODO
 		
 		if (platform.hasWindow) {
@@ -539,12 +545,16 @@ export default class ManagedAppWindowExtension {
 			let desc = Object.getOwnPropertyDescriptor(currentWindow, name)
 					|| Object.getOwnPropertyDescriptor(ManagedAppWindow.prototype, name)
 			if (typeof desc.value === 'function') {
+				// TODO: currently this captures calling method here and calls in anywhere else. this is backwards
+				//       this needs to listen on all other windows than current one and execute it there.
 				// Do not sync functions that (educated guess) are just getters and do not actually change any internal value.
 				if (name.startsWith('get') && name[3] === name[3].toUpperCase()) continue
 				if (name.startsWith('is')  && name[2] === name[2].toUpperCase()) continue
 				let origFnKey = '_' + name + '_original'
 				currentWindow[origFnKey] = desc.value
+				console.log('name', name)
 				currentWindow[name] = (...args) => {
+					console.log('INTERCEPT', name)
 					this._callRemotely(name, args)
 					return currentWindow[origFnKey](...args)
 				}
@@ -554,7 +564,10 @@ export default class ManagedAppWindowExtension {
 				Object.defineProperty(currentWindow, name, {
 					configurable, enumerable,
 					get: () => value,
-					set: newValue => value = newValue,
+					set: newValue => {
+						this._updateValue(name, newValue)
+						value = newValue
+					}
 				})
 			} else if (desc.get && desc.set) {
 				// Intercept setters.
@@ -575,10 +588,10 @@ export default class ManagedAppWindowExtension {
 		currentWindow.emitLocal = currentWindow.emit
 		currentWindow.emit = (name, ...args) => {
 			if (args.length) {
-				this._bc.postMessage({id, name, args})
+				this._emitRemotely(name, args)
 				currentWindow.emitLocal(name, ...args)
 			} else {
-				this._bc.postMessage({id, name})
+				this._emitRemotely(name)
 				currentWindow.emitLocal(name)
 			}
 		}
@@ -587,7 +600,7 @@ export default class ManagedAppWindowExtension {
 	_sendBc(data) {
 		data._from = this.currentWindow.id
 		console.log('posting', data)
-		this._bc.postMessage(data)
+		this._wbc.postMessage(data)
 	}
 
 	_callRemotely(name, args) {
@@ -711,12 +724,9 @@ export default class ManagedAppWindowExtension {
 
 
 
-global.ManagedAppWindow = ManagedAppWindow // todo delete
+//global.ManagedAppWindow = ManagedAppWindow // todo delete
 
-extendClass(ManagedAppWindow, ManagedAppWindow_SizeAndPosition)
-//extendClass(ManagedAppWindow, ManagedAppWindow_Polyfill)
-//extendClass(ManagedAppWindow, ManagedAppWindow_PolyfillStub)
-
+registerPlugin(ManagedAppWindowExtension)
 
 
 

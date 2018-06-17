@@ -10,7 +10,7 @@ var globals = objectFromArray(external)
 
 
 export default {
-	treeshake: false,
+	//treeshake: false,
 	input: 'index.mjs',
 	output: [{
 		file: `index.js`,

@@ -1,4 +1,5 @@
 import platform from 'platform-detect'
+import {registerPlugin} from './plugin-core.mjs'
 
 
 if (platform.uwp) {
@@ -11,7 +12,7 @@ if (platform.uwp) {
 
 export default class AppTheme {
 
-	setup() {
+	pluginConstructor() {
 		if (this.canDetectSystemTheme)
 			this.detectSystemTheme()
 	}
@@ -35,3 +36,5 @@ export default class AppTheme {
 	}
 
 }
+
+registerPlugin(AppTheme)
