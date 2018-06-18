@@ -21,35 +21,6 @@ registerPlugin('ManagedAppWindow', class ElectronStub {
 
 registerPlugin('ManagedAppWindow', class ElectronPolyfill {
 
-	///////////////////////////////////////////////////////////////////////////
-	// STATIC
-	///////////////////////////////////////////////////////////////////////////
-
-	// https://electronjs.org/docs/api/browser-window#browserwindowgetallwindows
-	static getAllWindows() {
-		return activeWindows
-	}
-
-	static getFocusedWindow() {
-		return activeWindows.find(w => w.focused)
-	}
-
-	// https://electronjs.org/docs/api/browser-window#browserwindowfromidid
-	static fromId(id) {
-		return activeWindows.find(w => w.id === parseInt(id))
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	// STATE
-	///////////////////////////////////////////////////////////////////////////
-
-	destroy() {
-	}
-
-	close() {
-		if (this.nwWindow) this.nwWindow.close()
-	}
-
 	// https://electronjs.org/docs/api/browser-window#winisdestroyed
 	isDestroyed() {
 		// TODO
@@ -60,39 +31,6 @@ registerPlugin('ManagedAppWindow', class ElectronPolyfill {
 	///////////////////////////////////////////////////////////////////////////
 	// VISIBILITY
 	///////////////////////////////////////////////////////////////////////////
-
-	focus() {
-	}
-
-	blur() {
-	}
-
-	show() {
-		if (this.nwWindow) this.nwWindow.show()
-	}
-
-	hide() {
-		if (this.nwWindow) this.nwWindow.hide()
-	}
-
-	maximize() {
-		if (this.nwWindow) this.nwWindow.maximize()
-	}
-
-	unmaximize() {
-		if (this.nwWindow) this.nwWindow.unmaximize()
-	}
-
-	minimize() {
-		if (this.nwWindow) this.nwWindow.minimize()
-	}
-
-	restore() {
-		if (this.nwWindow) this.nwWindow.restore()
-	}
-
-	setFullScreen(flag) {
-	}
 
 	// https://electronjs.org/docs/api/browser-window#winisfocused
 	isFocused() {return this.focused}
@@ -144,9 +82,6 @@ registerPlugin('ManagedAppWindow', class ElectronPolyfill {
 	getContentSize() {
 		return this.getSize()
 	}
-
-
-
 
 
 	resizable = true // todo

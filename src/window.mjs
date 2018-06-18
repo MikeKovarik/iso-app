@@ -89,6 +89,20 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		}
 	}
 
+	// https://electronjs.org/docs/api/browser-window#browserwindowgetallwindows
+	static getAllWindows() {
+		return activeWindows
+	}
+
+	static getFocusedWindow() {
+		return activeWindows.find(w => w.focused)
+	}
+
+	// https://electronjs.org/docs/api/browser-window#browserwindowfromidid
+	static fromId(id) {
+		return activeWindows.find(w => w.id === parseInt(id))
+	}
+
 	constructor(arg) {
 		super()
 		console.log('ManagedAppWindow constructor')
@@ -166,7 +180,6 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 				// handled through IPC to prevent complications with taking hold of the window objects, passing messages
 				// to each one. Plus there are the UWP limitations (that require injection).
 				if (arg === window) {
-					console.log('open this window', arg.name, arg)
 					this.window = arg
 					this.document = this.window.document
 					this.local = true
@@ -234,6 +247,11 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		return false
 	}
 
+	// TODO
+	get isCurrentWindow() {
+		return this.window === window
+	}
+
 
 	///////////////////////////////////////////////////////////////////////////
 	// STATE
@@ -253,32 +271,9 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		} else if (this.window) {
 			this.window.close()
 			// TODO remove all DOM listeners too
-		} else {
-			/*ipc.emit({
-				id: this.id,
-				method: 'close'
-			})*/
 		}
 		this.once('close', () => this.destroy())
 	}
-
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// TODO DELETE
-	///////////////////////////////////////////////////////////////////////////
-
-	// to be deleted!
-	bark() {
-		console.log('BARK!')
-	}
-	get deleteme() {
-		return this._deleteme
-	}
-	set deleteme(newValue) {
-		this._deleteme = newValue
-	}
-
 
 })
 
@@ -310,10 +305,10 @@ registerPlugin(class AppWindows {
 		} else if (platform.hasWindow && platform.electron) {
 			electron.remote.BrowserWindow.getAllWindows()
 				.map(browserWindow => ManagedAppWindow.from(browserWindow))
-		} else if (this._sendBc) {
+		} else if (this._wbcSend) {
 			// Fallback to IPC. Broadcast my ID and list of IDs this window already tracks.
 			// Ideally the windows that aren't on the list will introduce themselves.
-			this._sendBc({
+			this._wbcSend({
 				_windows: this.windows.map(w => w.id)
 			})
 		}

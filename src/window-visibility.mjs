@@ -30,13 +30,45 @@ registerPlugin('ManagedAppWindow', class Visibility {
 	// Shortcut for .isFullScreen()
 	fullscreen = undefined
 
-
 	pluginConstructor() {
-		console.log('pluginConstructor Visibility')
+		//console.log('pluginConstructor Visibility')
 		if (this.local)
 			this._setupLocal()
-		else
-			this._setupRemote()
+		//else
+		//	this._setupRemote()
+	}
+
+	focus() {
+	}
+
+	blur() {
+	}
+
+	show() {
+		if (this.nwWindow) this.nwWindow.show()
+	}
+
+	hide() {
+		if (this.nwWindow) this.nwWindow.hide()
+	}
+
+	maximize() {
+		if (this.nwWindow) this.nwWindow.maximize()
+	}
+
+	unmaximize() {
+		if (this.nwWindow) this.nwWindow.unmaximize()
+	}
+
+	minimize() {
+		if (this.nwWindow) this.nwWindow.minimize()
+	}
+
+	restore() {
+		if (this.nwWindow) this.nwWindow.restore()
+	}
+
+	setFullScreen(flag) {
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -127,14 +159,6 @@ registerPlugin('ManagedAppWindow', class Visibility {
 			this.emit('maximize')
 		else if (!maximized && this.maximized)
 			this.emit('unmaximize')
-	}
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// REMOTE
-	///////////////////////////////////////////////////////////////////////////
-
-	_setupRemote() {
 	}
 
 })
