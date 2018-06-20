@@ -1,8 +1,11 @@
+var $ = document.querySelector.bind(document)
 var platform = window['platform-detect']
 var app = window['iso-app']
-var $ = document.querySelector.bind(document)
 
 
+if (platform.electron) {
+	window.electron = require('electron')
+}
 
 if (platform.uwp) {
 	var {ApplicationView, ApplicationViewSwitcher} = Windows.UI.ViewManagement
@@ -20,12 +23,12 @@ if (platform.hasWindow) {
 	log = console.log.bind(console)
 }
 
-if (platform.hasWindow) {
-	log('id', app.currentWindow.id)
-	logWindow(app.currentWindow)
-}
-log('isMainWindow', app.isMainWindow)
-log('isMainProcess', app.isMainProcess)
+//if (platform.hasWindow) {
+//	log('id', app.currentWindow.id)
+//	logWindow(app.currentWindow)
+//}
+//log('isMainWindow', app.isMainWindow)
+//log('isMainProcess', app.isMainProcess)
 
 if (platform.node)
 	log(`Node.js ${process.versions.node}`)
@@ -35,6 +38,12 @@ if (platform.nwjs)
 	log(`NW.JS ${process.versions.nw}`)
 if (platform.electron)
 	log(`Electron ${process.versions.electron}`)
+
+if (platform.nwjs) {
+	app.currentWindow.on('close', e => {
+		app.currentWindow.close(true)
+	})
+}
 
 
 var winOptions = {
@@ -62,35 +71,6 @@ function logWindow(win = app.currentWindow) {
 	win.on('leave-full-screen', e => log(win.id, 'leave-full-screen'))
 	win.on('close', e => log(win.id, 'close'))
 	win.on('closed', e => log(win.id, 'closed'))
-
-	/*
-	win.on('blur',  e => log('win blur'))
-	win.on('focus', e => log('win focus'))
-	win.on('minimize', e => log('win minimize'))
-	win.on('restore',  e => log('win restore'))
-	win.on('maximize',   e => log('win maximize'))
-	win.on('unmaximize', e => log('win unmaximize'))
-	win.on('restore',  e => log('win restore'))
-
-	if (win.browserWindow) {
-		win.browserWindow.on('blur',  e => log('win blur'))
-		win.browserWindow.on('focus', e => log('win focus'))
-		win.browserWindow.on('minimize', e => log('win minimize'))
-		win.browserWindow.on('restore',  e => log('win restore'))
-		win.browserWindow.on('maximize',   e => log('win maximize'))
-		win.browserWindow.on('unmaximize', e => log('win unmaximize'))
-		win.browserWindow.on('restore',  e => log('win restore'))
-	}
-	if (win.nwWindow) {
-		win.nwWindow.on('blur',  e => log('win blur'))
-		win.nwWindow.on('focus', e => log('win focus'))
-		win.nwWindow.on('minimize', e => log('win minimize'))
-		win.nwWindow.on('restore',  e => log('win restore'))
-		win.nwWindow.on('maximize',   e => log('win maximize'))
-		win.nwWindow.on('unmaximize', e => log('win unmaximize'))
-		win.nwWindow.on('restore',  e => log('win restore'))
-	}
-	*/
 }
 
 var $winCount = $('#win-count')
@@ -100,7 +80,7 @@ function updateWinCount() {
 	$windows.innerHTML = app.windows.map(win => `
 	<div class="window">
 		<div>
-			<button onclick="app.windows.find(w => w.id === ${win.id}).close()">close</button>
+			<button onclick="app.windows.find(w => w.id === ${win.id}).close(true)">close</button>
 			<button onclick="app.windows.find(w => w.id === ${win.id}).maximize()">maximize</button>
 			<button onclick="app.windows.find(w => w.id === ${win.id}).minimize()">minimize</button>
 			<button onclick="app.windows.find(w => w.id === ${win.id}).restore()">restore</button>
@@ -112,6 +92,8 @@ function updateWinCount() {
 			<div>maximized: ${win.maximized}</div>
 			<div>minimized: ${win.minimized}</div>
 			<div>fullscreen: ${win.fullscreen}</div>
+			<div>focused: ${win.focused}</div>
+			<div>visible: ${win.visible}</div>
 			<div>x: ${win.x}, y: ${win.y}</div>
 			<div>w: ${win.width}, h: ${win.height}</div>
 		</div>
@@ -119,12 +101,11 @@ function updateWinCount() {
 	`).join('\n')
 }
 updateWinCount()
-setInterval(updateWinCount, 1000)
+//setInterval(updateWinCount, 1000)
 
+app.on('window-created', maw => {
+	updateWinCount()
+	maw.once('closed', updateWinCount)
+})
 
 $('#open').addEventListener('click', openWindow)
-//$('#open').addEventListener('click', () => app.openWindow())
-/*
-$('#emit').addEventListener('click', () => app.emit('emiting'))
-$('#broadcast').addEventListener('click', () => app.broadcast('broadcasting to all'))
-*/

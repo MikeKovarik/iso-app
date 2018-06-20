@@ -76,20 +76,16 @@ registerPlugin('ManagedAppWindow', class Visibility {
 	///////////////////////////////////////////////////////////////////////////
 
 	_setupLocal() {	
+
 		if (this.window) {
-			// TODO: re-enable ----------------------------------------------------------------------------------
+
 			//this.window.addEventListener('focus', e => this.emit('focus'))
 			//this.window.addEventListener('blur',  e => this.emit('blur'))
 			this._onVisibilityChange = this._onVisibilityChange.bind(this)
 			this.document.addEventListener('visibilitychange', this._onVisibilityChange)
 			this._onResize = this._onResize.bind(this)
 			this.window.addEventListener('resize', this._onResize, {passive: true})
-			// https://electronjs.org/docs/api/browser-window#event-close
-			// https://electronjs.org/docs/api/browser-window#event-closed
-			this.window.addEventListener('beforeunload', e => this.emit('close'))
-			this.window.addEventListener('unload', e => this.emit('closed'))
-			//this.window.addEventListener('beforeunload', e => this.emit('close', e))
-			//this.window.addEventListener('unload', e => this.emit('closed', e))
+
 			// Kickstart it with default values.
 			this.focused = this.document.hasFocus()
 			this.visible = !this.document.hidden // rough estimate
@@ -98,10 +94,6 @@ registerPlugin('ManagedAppWindow', class Visibility {
 			this.fullscreen = false // can we get initial value?
 		}
 
-		this._exposeEventStates()	
-	}
-
-	_exposeEventStates() {
 		// https://electronjs.org/docs/api/browser-window#event-blur
 		// https://electronjs.org/docs/api/browser-window#event-focus
 		this.on('blur',  e => this.focused = false)

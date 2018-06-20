@@ -23,21 +23,28 @@ export function registerClass(Class) {
 		extendClass(Class, Plugin)
 	Class.prototype._applyPlugins = function() {
 		for (let Plugin of plugins) {
-			if (Plugin.prototype.pluginConstructor && this)
-				Plugin.prototype.pluginConstructor.call(this)
+			try {
+				if (Plugin.prototype.pluginConstructor && this)
+					Plugin.prototype.pluginConstructor.call(this)
+			} catch(err) {console.error(err)}
 		}
 	}
 	return Class
 }
 
 function extendClass(Class, Plugin) {
-	let mainProto = Class.prototype
+	for (let key of Object.getOwnPropertyNames(Plugin)) {
+		if (!(key in Class)) {
+			let desc = Object.getOwnPropertyDescriptor(Plugin, key)
+			Object.defineProperty(Class, key, desc)
+		}
+	}
 	for (let key of Object.getOwnPropertyNames(Plugin.prototype)) {
 		if (key === 'constructor') continue
 		if (key === 'pluginConstructor') continue
-		if (!(key in mainProto)) {
+		if (!(key in Class.prototype)) {
 			let desc = Object.getOwnPropertyDescriptor(Plugin.prototype, key)
-			Object.defineProperty(mainProto, key, desc)
+			Object.defineProperty(Class.prototype, key, desc)
 		}
 	}
 }

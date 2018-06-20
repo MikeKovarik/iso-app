@@ -34,7 +34,7 @@ export function isBrowserWindow(object) {
 // WARNING: It'd be easier to do 'instanceof Window' or .constructor.name === 'Window' but that's impossible
 //          due to mixing contexts and quirky restrictions of UWP.
 export function isWindow(object) {
-	return object
+	return object !== undefined
 		&& object.setTimeout !== undefined
 		&& object.location !== undefined
 		&& object.addEventListener !== undefined
@@ -73,17 +73,6 @@ export class ArraySet extends Array {
 	filter(...args) {
 		return Array.from(this).filter(...args)
 	}
-}
-
-export function sanitizeUrl(url) {
-	if (!url) return url
-	if (!url.includes('://')) {
-		if (platform.uwp)
-			return `ms-appx:///${url}`
-		//else if (platform.electron)
-		//	return `file://${__dirname}/${url}`
-	}
-	return url
 }
 
 export function removeArrayItem(arr, item) {

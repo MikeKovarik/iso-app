@@ -14,6 +14,10 @@ import {arrayDiff} from './window-util.mjs'
 
 // TODO: heartbeat?
 
+// TODO: make electron sync windows as well because it's horribly unreliable:
+//       - focus/blur stops emitting after couple times
+//       - close/closed (and pretty much no other) events aren't fired if they are
+//         listened to within the first 500 of creation of new BrowserWindow.
 
 var wbc
 if (typeof BroadcastChannel !== 'undefined')
@@ -43,6 +47,15 @@ registerPlugin('ManagedAppWindow', class WindowSync {
 		} else if (this.remote) {
 			this._wrapEventsForRemoteSync()
 			this._wrapMethodsForRemoteSync()
+		}
+
+		if (!platform.nwjs && !platform.electron && platform.hasWindow) {
+			// Fallback to IPC. Broadcast my ID and list of IDs this window already tracks.
+			// Ideally the windows that aren't on the list will introduce themselves.
+			var activeWindows = this.constructor.getAllWindows()
+			wbcSend({
+				_windows: activeWindows.map(w => w.id)
+			})
 		}
 	}
 
@@ -172,7 +185,6 @@ registerPlugin(class {
 				currentWindowId = this.currentWindow.id
 			this._wbc = wbc
 			this._wbc.onmessage = this._onBcMessage.bind(this)
-			this._wbcSend = wbcSend
 		}
 	}
 
@@ -183,8 +195,10 @@ registerPlugin(class {
 		// The ManagedAppWindow will be hollow (not based on actual web window object, because we can't get hold of it)
 		// and change its state based on broadcasted messages.
 		var myMissingIds = arrayDiff(hisIds, myIds)
-		if (myMissingIds.length)
-			myMissingIds.map(id => this._getOrCreateMaw(id))
+		if (myMissingIds.length) {
+			var {ManagedAppWindow} = this.constructor
+			myMissingIds.map(id => ManagedAppWindow.from(id))
+		}
 		// Notify the other side of windows we know of (and have access to).
 		var hisMissingIds = arrayDiff(myIds, hisIds)
 		if (hisMissingIds.length) {
@@ -212,10 +226,11 @@ registerPlugin(class {
 		// and includes list of IDs of windows it already has access to (or knows of).
 		if (Array.isArray(data._windows))
 			return this._handleWindowScanRequest(data)
+		var {ManagedAppWindow} = this.constructor
 		if (data._to !== undefined)
-			var maw = this._getOrCreateMaw(data._to)
+			var maw = ManagedAppWindow.from(data._to)
 		else if (data._from !== undefined)
-			var maw = this._getOrCreateMaw(data._from)
+			var maw = ManagedAppWindow.from(data._from)
 		else
 			return
 

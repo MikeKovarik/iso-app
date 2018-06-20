@@ -52,6 +52,7 @@
 
 		_distributeMessage(data) {
 			var windows = BroadcastChannel._getWindowList()
+			console.log('windows', windows.length)
 			for (var winDescriptor of windows) {
 				if (winDescriptor.id !== data.from && winDescriptor.id != this._thisWinId)
 					winDescriptor.window.postMessage(data, location.origin)
@@ -75,7 +76,7 @@
 			if (this._isUwp) {
 				var data = {
 					[this._KEY]: message,
-					from: currentWindow.id
+					from: this._thisWinId
 				}
 				if (window.opener)
 					window.opener.postMessage(data, location.origin)

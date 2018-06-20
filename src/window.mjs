@@ -10,7 +10,6 @@ import {
 	isWindow,
 	getWindowOpener,
 	getRandomWindowId,
-	sanitizeUrl,
 } from './window-util.mjs'
 
 // TODO: change emit to local emit
@@ -53,20 +52,16 @@ import {
 
 
 
+
+
 var nativeMap = new Map() // TODO
 var activeWindows = new ArraySet()
 // Needed for UWP BroadcastChannel polyfill.
 if (platform.uwp)
-	BroadcastChannel._getWindowList = () => windows
+	BroadcastChannel._getWindowList = () => activeWindows
 
 
-// TODO
-//if (platform.electron)
-//	var ManagedAppWindowSuperClass = BrowserWindow
-//else
-	var ManagedAppWindowSuperClass = EventEmitter
-
-var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWindowSuperClass {
+var ManagedAppWindow = registerClass(class ManagedAppWindow extends EventEmitter {
 
 	// Gets ManagedAppWindow instance for current window.
 	static get() {
@@ -77,37 +72,75 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		else if (platform.hasWindow)
 			return this.from(window)
 	}
-	
-	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into ManagedAppWindow instance.
-	static from(arg) {
-		if (typeof arg === 'string' || typeof arg === 'number') {
-			var id = parseInt(arg)
-			var appwin = activeWindows.find(appwin => appwin.id === id)
-			return appwin || new this(arg)
-		} else {
-			return nativeMap.get(arg) || new this(arg)
-		}
-	}
 
 	// https://electronjs.org/docs/api/browser-window#browserwindowgetallwindows
 	static getAllWindows() {
+		if (platform.hasWindow) {
+			if (platform.nwjs) {
+				return chrome.app.window.getAll().map(appWindow => this.from(appWindow))
+			} else if (platform.electron) {
+				return BrowserWindow.getAllWindows().map(browserWindow => this.from(browserWindow))
+			}
+		}
 		return activeWindows
 	}
 
 	static getFocusedWindow() {
 		return activeWindows.find(w => w.focused)
 	}
+	
+	// Resolves Window, NwWindow, BrowserWindow, AppWindow objects and string ID into ManagedAppWindow instance.
+	static from(arg) {
+		if (typeof arg === 'string' || typeof arg === 'number') {
+			/*
+			*/
+			var id = parseInt(arg)
+			var ids = activeWindows.map(maw => maw.id)
+			var maw = this.fromId(id)
+			return maw || new this(arg)
+		} else {
+			return nativeMap.get(arg) || new this(arg)
+		}
+	}
 
 	// https://electronjs.org/docs/api/browser-window#browserwindowfromidid
 	static fromId(id) {
-		return activeWindows.find(w => w.id === parseInt(id))
+		id = parseInt(id)
+		return activeWindows.find(maw => maw.id === id)
 	}
 
 	constructor(arg) {
 		super()
-		console.log('ManagedAppWindow constructor')
-		this._detectArgument(arg)
+		// constructor can be delayed (NW.JS)
+		if (arg)
+			this._constructor(arg)
+	}
 
+	_instantiate() {
+		// Electron and browser windows can be opened at any positing in any size.
+		// NW.JS can't so we have to reposition it after it's opened
+		if (platform.nwjs) {
+			//if (options.x !== undefined || options.y !== undefined)
+			//	this.nwWindow.moveTo(options.x, options.y)
+		}
+	}
+
+	_constructor(arg) {
+		var OMFG = Math.random().toString().slice(-2)
+
+		if (typeof arg === 'string' || typeof arg === 'number') {
+			this.id = parseInt(arg)
+			this.remote = true
+		} else {
+			this.window = arg
+		}
+		/*
+		try {
+			this._detectArgument(arg)
+		} catch(err) {
+			console.error(err)
+		}
+*/
 		// Store all various shapes and object pointing to the current window in a map used by
 		// static .from() method to prevent creation of new instances of the same window.
 		if (this.browserWindow)	{
@@ -123,21 +156,10 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		// handle IDs
 		this._createId()
 
-		// TODO: maybe reintroduce subclassed ActiveWindows that does not do any magic in
-		// constructor but takes care of self removal code like this.
 		activeWindows.add(this)
 		this.once('closed', () => activeWindows.delete(this))
 
 		this._applyPlugins(this)
-	}
-
-	_instantiate() {
-		// Electron and browser windows can be opened at any positing in any size.
-		// NW.JS can't so we have to reposition it after it's opened
-		if (platform.nwjs) {
-			//if (options.x !== undefined || options.y !== undefined)
-			//	this.nwWindow.moveTo(options.x, options.y)
-		}
 	}
 
 	_detectArgument(arg) {
@@ -174,14 +196,20 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 					this.browserWindow = electron.remote.getCurrentWindow()
 				}
 				this.local = true
-			} else if (isWindow(arg)) {
+			} else {
+			//} else if (isWindow(arg)) {
+				//if (window.log)
+				//	window.log('is window')
 				// Use raw web window objects only in case of vanilla web (and PWAs) because we have nothing else to work
 				// with. Duh. Also only use the the object for the window this code runs in. Other should be decoupled and
 				// handled through IPC to prevent complications with taking hold of the window objects, passing messages
 				// to each one. Plus there are the UWP limitations (that require injection).
 				if (arg === window) {
 					this.window = arg
-					this.document = this.window.document
+					try {
+						// because UWP
+						this.document = this.window.document
+					} catch(err) {}
 					this.local = true
 				} else {
 					this.id = parseInt(arg.name)
@@ -199,17 +227,17 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 	_createId() {
 		if (this.id !== undefined) return
 		this.id = 0
-		if (platform.electron) {
+		if (platform.electron)
 			this.id = this.browserWindow.id
-		} else if (this.nwWindow && this.nwWindow.appWindow.id) {
+		else if (this.nwWindow && this.nwWindow.appWindow.id)
 			this.id = parseInt(this.nwWindow.appWindow.id)
-		} else if (this.window && platform.uwp) {
+		else if (this.window && platform.uwp)
 			this.id = MSApp.getViewId(this.window)
-		} else if (this.window && this.window.name) {
+		else if (this.window && this.window.name)
 			this.id = parseInt(this.window.name)
-		} else {
+		else
 			this.id = getRandomWindowId()
-		}
+
 		if (this.window)
 			this.window.name = this.id
 	}
@@ -249,7 +277,11 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 
 	// TODO
 	get isCurrentWindow() {
-		return this.window === window
+		if (platform.electron) {
+		} else if (platform.nwjs) {
+		} else {
+			return this.window === window
+		}
 	}
 
 
@@ -275,10 +307,8 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 		this.once('close', () => this.destroy())
 	}
 
+
 })
-
-
-
 
 
 
@@ -290,30 +320,11 @@ var ManagedAppWindow = registerClass(class ManagedAppWindow extends ManagedAppWi
 
 registerPlugin(class AppWindows {
 
+	static ManagedAppWindow = ManagedAppWindow
+
 	pluginConstructor() {
 		this.windows = activeWindows
-		
-		if (platform.hasWindow)
-			this._updateWindows()
 	}
-
-	_updateWindows() {
-		//console.log('ActiveWindows.update()')
-		if (platform.hasWindow && platform.nwjs) {
-			chrome.app.window.getAll()
-				.map(appWindow => ManagedAppWindow.from(appWindow))
-		} else if (platform.hasWindow && platform.electron) {
-			electron.remote.BrowserWindow.getAllWindows()
-				.map(browserWindow => ManagedAppWindow.from(browserWindow))
-		} else if (this._wbcSend) {
-			// Fallback to IPC. Broadcast my ID and list of IDs this window already tracks.
-			// Ideally the windows that aren't on the list will introduce themselves.
-			this._wbcSend({
-				_windows: this.windows.map(w => w.id)
-			})
-		}
-	}
-
 
 	///////////////////////////////////////////////////////////////////////////
 	// PROPERTIES
@@ -321,9 +332,8 @@ registerPlugin(class AppWindows {
 
 	// instance of ManagedAppWindow of window object.
 	get currentWindow() {
-		if (platform.hasWindow) {
+		if (platform.hasWindow)
 			return ManagedAppWindow.get()
-		}
 	}
 
 	// instance of ManagedAppWindow of window.opener. Uses window.opener where available (except for UWP and Electron)
@@ -343,77 +353,10 @@ registerPlugin(class AppWindows {
 
 	// instance of ManagedAppWindow() wrap around the initial first window opened
 	get isMainWindow() {
-		return !!this.currentWindow && this.currentWindow.isMainWindow
+		var currentWindow = this.currentWindow
+		return !!currentWindow && currentWindow.isMainWindow
 	}
 
-	_getOrCreateMaw(arg) {
-		return ManagedAppWindow.from(arg)
-	}
-
-
-	///////////////////////////////////////////////////////////////////////////
-	// METHODS
-	///////////////////////////////////////////////////////////////////////////
-
-	// [url] string - url to open
-	// [options] object - window size and position
-	open(url, options) {
-		// Handle arguments
-		if (typeof url === 'object') {
-			options = url
-			url = options.url || 'index.html'
-		}
-		// Open the window
-		var maw = this._openWindow(url, options)
-		var e = {} // TODO: event
-		this.emit('browser-window-created', e, maw) // shim for electron event
-		// custom API, without the events
-		this.emit('window-created', maw)
-		return maw
-	}
-
-	// Opens new window using window.open or proprietary Electrons/NW.JS proprietary API.
-	_openWindow(url, options) {
-		url = sanitizeUrl(url)
-		sanitizeWindowOptions(options)
-		if (platform.electron) {
-			var browserWindow = new BrowserWindow(options)
-			if (url.includes('://'))
-				browserWindow.loadURL(url)
-			else
-				browserWindow.loadFile(url)
-			//resolve(browserWindow)
-			return new ManagedAppWindow(browserWindow)
-		} else {
-			var id = getRandomWindowId()
-			if (platform.nwjs) {
-				// TODO. MOVE THIS TO CONSTUCTOR
-				options.id = id.toString()
-				nw.Window.open(url, options, nwWindow => {
-					if (options.x !== undefined || options.y !== undefined)
-						nwWindow.moveTo(options.x, options.y)
-					// TODO. return nwWindow
-					//resolve(nwWindow)
-					return new ManagedAppWindow(nwWindow)
-				})
-			} else if (platform.hasWindow) {
-				try {
-					var optionsString = stringifyWindowOptions(options)
-					// WARNING: In UWP child window cannot open another one (3rd level deep). It throws as of spring 2018 update.
-					//          What works is trying to open it from parent window that can be accessed from window.opener.
-					var webWindow = window
-					if (platform.uwp && !!window.opener)
-						webWindow = window.opener
-					// Let's get the party started.
-					var newWindow = webWindow.open(url, id.toString(), optionsString)
-					//resolve(newWindow)
-					return new ManagedAppWindow(newWindow)
-				} catch(err) {
-					// Swallow the error and don't open the window.
-				}
-			}
-		}
-	}
 
 })
 
@@ -422,24 +365,3 @@ registerPlugin(class AppWindows {
 
 
 
-
-
-function sanitizeWindowOptions(options) {
-	if (options.electron) {
-		options.alwaysOnTop = options.always_on_top
-		options.skipTaskbar = !options.show_in_taskbar
-	} else if (options.nwjs) {
-		options.always_on_top = options.alwaysOnTop
-		options.show_in_taskbar = !options.skipTaskbar
-		options.min_width  = options.minWidth
-		options.min_height = options.minHeight
-		options.max_width  = options.maxWidth
-		options.max_height = options.maxHeight
-	}
-}
-
-function stringifyWindowOptions(options) {
-	if (!options) return
-	return `width=${options.width},height=${options.height},left=${options.x},top=${options.y}`
-		+ ',directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no'
-}

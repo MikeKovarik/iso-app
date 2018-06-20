@@ -1,0 +1,33 @@
+
+
+var setPositionDesc = Object.getOwnPropertyDescriptor(ManagedAppWindow.prototype, 'setPosition')
+setPositionDesc.overwrite = true
+Object.defineProperty(ManagedAppWindow.prototype, 'setPosition', setPositionDesc)
+
+// NW will have access to NWWindow from background script
+// but only once the first window was created
+// This is not the most performant function, i know. I don't like using 'in' and 'delete' either. BUT.
+// Electron's BrowserWindow objects are strange. they're not really instances that would inherit the prototype
+// so they have to be modified one by one. You can't get Object.keys() on the object (nor the prototype) either.
+function extendNativeWindow(target) {
+	if (!target && platform.nwjs) {
+		var currentWindow = nw.Window.get()
+		if (currentWindow)
+			target = currentWindow.constructor.prototype
+	}
+	if (!target || target._pseudoConstuctor) return
+	var mawDescriptors = Object.getOwnPropertyDescriptors(ManagedAppWindow.prototype)
+	delete mawDescriptors.constructor
+	for (var [name, desc] of Object.entries(mawDescriptors)) {
+		//if (targetKeys.includes(name) && !desc.overwrite)
+		if (name in target && !desc.overwrite)
+			delete mawDescriptors[name]
+	}
+	Object.defineProperties(target, mawDescriptors)
+}
+
+if (platform.hasWindow) {
+	extendNativeWindow()
+}
+
+
