@@ -1,7 +1,8 @@
 import global from './global.mjs'
+import {moduleName} from './util.mjs'
 
 
-var keyBase = '__iso-app-preloaded-plugins__'
+var keyBase = `__${moduleName}-preloaded-plugins__`
 
 function getPlugins(name) {
 	var key = keyBase + name

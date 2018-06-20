@@ -1,58 +1,70 @@
 import platform from 'platform-detect'
 import {registerPlugin} from './plugin-core.mjs'
+import {EventEmitter} from './deps.mjs'
+import {moduleName, remove} from './util.mjs'
 
 
-// TODO: handle the origins and maybe app id so that other
-// tabs dont get the message if its a different app (using the
-// same plugin)
-
-export default class AppIpc {
+class AppIpc {
 
 	pluginConstructor() {
-		// Those objects that implement web's postMessage() and 'message'=>e.detail events.
-		this.webIpcEndpoints = []
-		// Those objects that implement node's send() and 'message'=>data events.
-		this.nodeLikeIpcEndpoints = []
+		this.emitLocal = EventEmitter.prototype.emit
+		this._parseMessage = this._parseMessage.bind(this)
+		if (typeof BroadcastChannel !== 'undefined') {
+			this._bc = new BroadcastChannel(`${moduleName}-${this.name}`)
+			this._bc.onmessage = e => this._parseMessage(e.data, e)
+		}
+		this._nodeEndpoints = []
+		// additional API for plugins.
+		this.on('_internal_ipc_', data => this._parseMessage(data))
 	}
 
-	postMessage(object, origin = '*') {
-		// TODO: wrap
-		this.webIpcEndpoints.forEach(endpoint => endpoint.postMessage(object, origin))
-		//this.nodeLikeIpcEndpoints.forEach(endpoint => endpoint.send(object))
+	// Register Node.js process or IPC object (or similarly shaped object).
+	_registerNodeEndpoint(endpoint) {
+		this._nodeEndpoints.push(endpoint)
+		var killback = () => {
+			remove(this._nodeEndpoints, endpoint)
+			endpoint.removeListener('message', this._parseMessage)
+		}
+		endpoint.once('exit', killback)
+		endpoint.once('close', killback)
+		endpoint.on('message', this._parseMessage)
 	}
 
-	send(object) {
-		// TODO: wrap
-		this.postMessage(object)
+	_parseMessage(data, e) {
+		if (data._message) {
+			this.emitLocal('message', data._message)
+		} else if (data._event) {
+			this.emitLocal(data._event, ...(data._args || []))
+		} else {
+			if (this.onmessage)
+				this.onmessage(e || {data})
+		}
 	}
 
-	_onWebMessage(e) {
-		var data = e.data || e.detail
-		//e.origin
+	_send(data) {
+		if (this._bc)
+			this._bc.postMessage(data)
+		if (this._nodeEndpoints.length)
+			this._nodeEndpoints.forEach(endpoint => endpoint.send(data))
 	}
-/*
-	emit(data) {
-		//if (window.opener)
-		//	window.opener.postMessage(data, '*')
+
+	// EventEmitter API
+
+	emit(event, ...args) {
+		this._send({_event: event, _args: args})
 	}
-*/
-	// todo. look at socket.io
-	broadcast(data) {
-		console.log('this.windows', this.windows)
-		//var endpoints = this.windows.map(appwin => appwin.window)
-		this.windows
-			.map(appwin => appwin.window)
-			.filter(window => window)
-			.forEach(window => window.postMessage(data, '*'))
+
+	// Node IPC API
+
+	send(message) {
+		this._send({_message: message})
 	}
-	/*
-	broadcast(data) {
-		// to app ipc endpoints
-		if (window.opener && !this.webIpcEndpoints.includes(window.opener))
-			window.opener.postMessage(data, '*')
-		this.postMessage(data)
+
+	// EventTarget API
+
+	postMessage(message) {
+		this._send({_message: message})
 	}
-	*/
 
 }
 

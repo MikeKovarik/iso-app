@@ -1,4 +1,7 @@
+import './src/platforms.mjs'
 
-import app from './src/app.mjs'
+import './src/ipc.mjs'
+import App from './src/app.mjs'
 
-export default app
+// This library is a singleton
+export default new App
