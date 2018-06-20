@@ -3,9 +3,6 @@ import {EventEmitter, nw, electron} from './deps.mjs'
 import {registerClass} from './plugin-core.mjs'
 
 
-if (typeof self !== 'undefined' && typeof global === 'undefined')
-	self.global = self
-
 if (platform.electron) {
 	// TODO: base the class on electrons? so the electron.app.something() thing can be replace with this.something()
 	var electronApp = electron.app || electron.remote.app
@@ -72,8 +69,3 @@ var App = registerClass(class App extends EventEmitter {
 var app = new App
 // Export as default
 export default app
-// Yeah I know. Each time you pollute global a kitten get strangled. I don't like it either,
-// but this is required in order to make this lib modular without forcing the plugins to
-// writing hundreds of code to handle UMD/require/ES import/import().
-// JS Modules are hell. Deal with it.
-global['__iso-app__'] = app
