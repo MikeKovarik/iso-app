@@ -37,4 +37,8 @@ export default class AppTheme {
 
 }
 
-registerPlugin(AppTheme)
+function useless() {
+	console.log('foo')
+}
+
+//registerPlugin(AppTheme)

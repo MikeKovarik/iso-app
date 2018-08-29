@@ -2,19 +2,38 @@ import global from './global.mjs'
 import {moduleName} from './util.mjs'
 
 
-var keyBase = `__${moduleName}-preloaded-plugins__`
+var key = `__${moduleName}-internals__`
+export var internals = global[key] = global[key] || {registerPlugin}
 
 function getPlugins(name) {
-	var key = keyBase + name
-	return global[key] = global[key] || []
+	var key = name === 'App' ? 'plugins' : `plugins${name}`
+	return internals[key] = internals[key] || []
 }
 
 // All plugins have to be pre-registered before the target class is registered (and used)
-export function registerPlugin(name, Plugin) {
+export function registerPlugin(targetClassName, Plugin) {
 	if (Plugin === undefined)
-		[Plugin, name] = [name, 'App']
-	var plugins = getPlugins(name)
-	plugins.push(Plugin)
+		[targetClassName, Plugin] = ['App', targetClassName]
+	// TODO: make this work with other classes too (ManagedAppWindow)
+	if (internals.app) {
+		// App instance was already created before this plugin was loaded.
+		// Patch it in.
+		applyPlugin(internals.app, Plugin)
+	} else {
+		// Plugin was loaded before the App was instatiated. Add the plugin to the list.
+		var plugins = getPlugins(targetClassName)
+		plugins.push(Plugin)
+	}
+}
+
+function applyPlugin(instance, Plugin) {
+	try {
+		var ctor = Plugin.prototype.pluginConstructor
+		if (ctor && instance)
+			ctor.call(instance)
+	} catch(err) {
+		console.error(moduleName, `Plugin ${Plugin.name} failed`, err)
+	}
 }
 
 // Register class and extend it with all pre-registered plugins
@@ -23,29 +42,25 @@ export function registerClass(Class) {
 	for (let Plugin of plugins)
 		extendClass(Class, Plugin)
 	Class.prototype._applyPlugins = function() {
-		for (let Plugin of plugins) {
-			try {
-				if (Plugin.prototype.pluginConstructor && this)
-					Plugin.prototype.pluginConstructor.call(this)
-			} catch(err) {console.error(err)}
-		}
+		for (let Plugin of plugins)
+			applyPlugin(this, Plugin)
 	}
-	return Class
 }
 
 function extendClass(Class, Plugin) {
+	// Static
 	for (let key of Object.getOwnPropertyNames(Plugin)) {
-		if (!(key in Class)) {
-			let desc = Object.getOwnPropertyDescriptor(Plugin, key)
-			Object.defineProperty(Class, key, desc)
-		}
+		if (key === 'prototype') continue
+		extendKey(Class, Plugin, key)
 	}
+	// Prototype
 	for (let key of Object.getOwnPropertyNames(Plugin.prototype)) {
-		if (key === 'constructor') continue
-		if (key === 'pluginConstructor') continue
-		if (!(key in Class.prototype)) {
-			let desc = Object.getOwnPropertyDescriptor(Plugin.prototype, key)
-			Object.defineProperty(Class.prototype, key, desc)
-		}
+		if (key === 'constructor' || key === 'pluginConstructor') continue
+		extendKey(Class.prototype, Plugin.prototype, key)
 	}
+}
+
+function extendKey(Target, Source, key) {
+	let desc = Object.getOwnPropertyDescriptor(Source, key)
+	Object.defineProperty(Target, key, desc)
 }
