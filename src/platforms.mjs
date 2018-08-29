@@ -3,6 +3,7 @@ import platform from 'platform-detect'
 
 export var nw
 export var electron
+export var BrowserWindow
 
 if (platform.electron) {
 	if (global && global.require)
@@ -30,5 +31,7 @@ if (platform.electron) {
 	electronApp.on('window-all-closed', () => {
 		electronApp.quit()
 	})
+
+	BrowserWindow = electron.BrowserWindow || electron.remote.BrowserWindow
 
 }
