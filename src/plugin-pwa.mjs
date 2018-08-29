@@ -5,7 +5,8 @@ import {registerPlugin} from './plugin-core.mjs'
 export default class AppPwa {
 
 	pluginConstructor() {
-		this._getManifest()
+		var manifestPromise = this._getManifest()
+		this._readyPromises.push(manifestPromise)
 		//this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0]
 		//this._registerServiceWorker()
 	}
@@ -56,5 +57,5 @@ export default class AppPwa {
 
 }
 
-registerPlugin(AppTheme)
+registerPlugin(AppPwa)
 

@@ -38,6 +38,16 @@ export default class App extends EventEmitter {
 		else
 			setTimeout(emitReady)
 
+		// app.ready should be a single promise that handles initialization promises of all loaded plugins.
+		this._readyPromises = []
+		this.ready = new Promise(async resolve => {
+			// Plugins can be initialized after this constructor so we have to wait until at least next tick.
+			// But since plugins can be loaded even after this main script we need to wait a little longer.
+			await asyncTimeout(50)
+			await Promise.all(this._readyPromises)
+			resolve()
+		})
+
 	}
 
 	// Exits immediately with exitCode. exitCode defaults to 0.
