@@ -9,7 +9,7 @@ export default class AppPwa {
 		if (!('serviceWorker' in navigator)) return
 		var manifestPromise = this._getManifest()
 		this._readyPromises.push(manifestPromise)
-		this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0] || 'serviceworker.js'
+		this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0]// || 'serviceworker.js'
 		//this._registerServiceWorker()
 		//this.isUpdateAvailable.then(result => console.log(result ? 'UPDATE AVAILABLE' : 'UP TO DATE'))
 	}
@@ -18,9 +18,13 @@ export default class AppPwa {
 		var manifestMeta = document.head.querySelector('[rel="manifest"]')
 		if (!manifestMeta) return
 		this.manifest = await fetch(manifestMeta.href).then(res => res.json())
+		console.log('this.manifest', this.manifest)
 		this.name = this.manifest.name || this.manifest.short_name
+		console.log('this.manifest.name || this.manifest.short_name', this.manifest.name || this.manifest.short_name)
+		console.log('this.name', this.name)
 		if (this.manifest.icons)
 			this.icon = this.manifest.icons[this.manifest.icons.length - 1]
+		console.log('manifest loaded')
 	}
 
 	get serviceWorker() {

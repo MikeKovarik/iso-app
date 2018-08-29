@@ -96,10 +96,10 @@ export default class App extends EventEmitter {
 	}
 
 	get name() {
-		this.getName()
+		return this.getName()
 	}
-	set name(name) {
-		this.setName(name)
+	set name(newName) {
+		this.setName(newName)
 	}
 
 	get id() {
@@ -110,11 +110,12 @@ export default class App extends EventEmitter {
 
 	// ELECTRON SHIM
 
+	// todo
 	isReady() {
 		if (platform.electron)
-			return electronApp.isReady()
+			return electronApp.isReady() // returns bool
 		else
-			return this.ready
+			return this.ready // is promise
 	}
 
 	getName() {
@@ -122,10 +123,14 @@ export default class App extends EventEmitter {
 			return electronApp.getName()
 		else if (platform.uwp)
 			return Windows.ApplicationModel.Package.current.displayName
+		else
+			return this._name || typeof document !== 'undefined' && document.title
 	}
-	setName(name) {
+	setName(newName) {
 		if (platform.electron)
-			return electronApp.setName(name)
+			return electronApp.setName(newName)
+		else
+			this._name = newName
 	}
 
 	// The current application directory.
