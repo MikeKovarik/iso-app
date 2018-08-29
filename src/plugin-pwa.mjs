@@ -5,10 +5,13 @@ import {registerPlugin} from './plugin-core.mjs'
 export default class AppPwa {
 
 	pluginConstructor() {
+		console.log('AppPwa constructor')
+		if (!('serviceWorker' in navigator)) return
 		var manifestPromise = this._getManifest()
 		this._readyPromises.push(manifestPromise)
-		//this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0]
+		this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0] || 'serviceworker.js'
 		//this._registerServiceWorker()
+		//this.isUpdateAvailable.then(result => console.log(result ? 'UPDATE AVAILABLE' : 'UP TO DATE'))
 	}
 
 	async _getManifest() {
@@ -28,30 +31,23 @@ export default class AppPwa {
 		this._registerServiceWorker()
 	}
 
-	async _registerServiceWorker() {
-		if (!('serviceWorker' in navigator)) return
+	_registerServiceWorker() {
 		if (!this.serviceWorker) return
-		var reg = this.serviceWorkerReg = await navigator.serviceWorker.register(this.serviceWorker)
-		console.log('reg.scope', reg.scope)
-		window.isUpdateAvailable = new Promise(resolve => {
+		this.isUpdateAvailable = new Promise(async resolve => {
+			var reg = await navigator.serviceWorker.register(this.serviceWorker)
+			if (navigator.serviceWorker.controller)
+				return resolve(false)
 			reg.onupdatefound = () => {
-				console.log('reg.onupdatefound', reg.onupdatefound)
-				console.log('reg.installing', reg.installing)
-				console.log('reg.installing.state', reg.installing.state)
-				reg.installing.onstatechange = () => {
-					console.log('reg.installing.onstatechange', reg.installing.onstatechange)
-					console.log('reg.installing.state', reg.installing.state)
-					if (reg.installing.state === 'installed') {
-						if (navigator.serviceWorker.controller) {
-							// new update available
-							resolve(true)
-						} else {
-							// no update available
-							resolve(false)
-						}
+				// Need to cache the object. It will be null on state change.
+				var installing = reg.installing
+				installing.onstatechange = () => {
+					if (installing.state === 'installed') {
+						resolve(navigator.serviceWorker.controller !== null)
+						installing.onstatechange = null
 					}
 				}
 			}
+			this.serviceWorkerReg = reg
 		})
 	}
 
