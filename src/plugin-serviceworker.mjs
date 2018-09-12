@@ -23,6 +23,8 @@ export class ServiceWorkerPlugin {
 		this.cacheFirst = true
 		this.autoRegister = true
 
+		this.monitoredServiceWorkers = []
+
 		// Some web apps cache all their files up front and serve them from cache but also silently make fresh fetch
 		// requests in the background while doing so. In case some html or css files changed and the app better be reloaded
 		// if was served with obsolete cached resources.
@@ -37,23 +39,19 @@ export class ServiceWorkerPlugin {
 			this.cacheAppFiles()
 		})
 
+		//var isServiceWorkerActive = navigator.serviceWorker.controller !== null
+		//console.log('isServiceWorkerActive', isServiceWorkerActive)
+		//var oldSw = navigator.serviceWorker.controller
+		this.swr = await navigator.serviceWorker.getRegistration()
+		if (this.swr)
+			this._handleServiceWorkerReg(this.swr)
 
 		console.log('this.autoRegister', this.autoRegister)
 		if (this.autoRegister) {
 			//this._defaultWorkerPath = './serviceworker.js'
 			this._defaultWorkerPath = getAbsolutePath('./serviceworker.js')
-			this._swRegister(this._defaultWorkerPath)
+			this.registerServiceWorker(this._defaultWorkerPath)
 		}
-
-
-		var isServiceWorkerActive = navigator.serviceWorker.controller !== null
-		console.log('isServiceWorkerActive', isServiceWorkerActive)
-		var oldSw = navigator.serviceWorker.controller
-		var oldSwr = await navigator.serviceWorker.getRegistration()
-		console.log('oldSw', oldSw)
-		console.log('oldSwr', oldSwr)
-
-
 	}
 
 	async uninstallServiceWorker() {
@@ -89,21 +87,21 @@ export class ServiceWorkerPlugin {
 	}
 
 	_swSend(object) {
-		if (this.sw)
-			this.sw.postMessage(object)
+		if (this.serviceWorker)
+			this.serviceWorker.postMessage(object)
 	}
 
 	// Path to serviceworker file. Default builtin is used unless user requests his own.
 	// Setting new service worker through this getter/setter installs it automatically.
-	get serviceWorker() {
-		if (this.sw)
-			return this.sw.scriptURL
+	get serviceWorkerUrl() {
+		var sw = this.serviceWorker
+		return sw && sw.scriptURL
 	}
-	set serviceWorker(url) {
-		this._swRegister(url)
+	set serviceWorkerUrl(url) {
+		this.registerServiceWorker(url)
 	}
 
-	get sw() {
+	get serviceWorker() {
 		if (this.swr) {
 			// Various states of undergoing registration
 			return this.swr.installing
@@ -115,21 +113,7 @@ export class ServiceWorkerPlugin {
 		}
 	}
 
-/*
-	get sw() {
-		return navigator.serviceWorker.controller
-	}
-
-	get swr() {
-		var swrs = await navigator.serviceWorker.getRegistrations()
-		for (let swr of swrs) {
-			var sw = swr.installing || swr.waiting || swr.active
-			if (sw === navigator.serviceWorker.controller)
-				return swr
-		}
-	}
-*/
-	async _swRegister(url) {
+	async registerServiceWorker(url) {
 		url = getAbsolutePath(url)
 		console.log('register', url)
 		// NOTE: we have to install SW every time the app loads in order to know if the file changed since
@@ -137,49 +121,60 @@ export class ServiceWorkerPlugin {
 		this.emitLocal('sw-register', url)
 		//console.log('register', url)
 		try {
-			var registration = await navigator.serviceWorker.register(url)
-			this._swCheckRegistration(registration)
+			console.log('-----------------------------------------------------------------------')
+			var oldSw = this.swr && extractSwFromSwr(this.swr)
+			this.swr = await navigator.serviceWorker.register(url)
+			var newSw = extractSwFromSwr(this.swr)
+			console.log('oldSw', oldSw)
+			console.log('newSw', newSw)
+			if (oldSw && newSw && oldSw !== newSw) {
+				// Detected change of URL of the worker. Completely different service worker is being installed.
+				// NOTE: This condition is true only is URL changes. It is false if the same worker
+				//       is just updated - new version of existing worker is loaded.
+				this.emit('sw-change', newSw.scriptURL, oldSw.scriptURL)
+				console.log('INSTALLING DIFFERENT SW')
+			} else if (!oldSw || !newSw) {
+				console.log('INSTALLING NEW ONE')
+			}
+			this._handleServiceWorkerReg(this.swr, true)
 			this.emitLocal('sw-registered', url)
 		} catch(err) {
 			console.warn('registering service worker failed', url, err)
-			this.emitLocal('sw-register-failed', err)
+			this.emitLocal('sw-not-registered', err)
 		}
 	}
 
-	_swCheckRegistration(registration) {
-		this.swr = registration
-		var url = this.sw.scriptURL
-		this.sw.addEventListener('statechange', e => {
-			var sw = this.sw
-			if (sw) {
-				this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
-			} else {
-				this.emitLocal(`sw-stopped`)
-				this.emitLocal(`sw-unregistered`)
+	_handleServiceWorkerReg(swr, isNewReg = false) {
+		console.log('_handleServiceWorkerReg() SWR', swr)
+		this._handleServiceWorker(extractSwFromSwr(swr))
+		swr.onupdatefound = () => {
+			if (!swr.installing) return
+			if (swr.active) {
+				// New versions of currently running service worker is being installed.
+				// Added custom 'sw-updating' event to signify that.
+				this.emit('sw-update', swr.installing.scriptURL)
+				console.log('********* SWAPPING OLD FOR NEW INSTALLING **********', isNewReg)
+			} else if (swr.installing) {
+				// Fresh installation of service worker. Not an update. None was installed before.
+				// All the 'sw-installing', 'sw-installed', etc... events are exposed by _handleServiceWorker().
+				console.log('****************** FRESH INSTALL *******************', isNewReg)
 			}
-		})
-		//if (navigator.serviceWorker.controller)
-		//	return resolve(false)
-		this.swr.onupdatefound = () => {
-			this.emitLocal('sw-update', url)
-			// Need to cache the object. It will be null on state change.
-			var sw = this.swr.installing
-			sw.onstatechange = () => {
-				console.log('ONSTATE CHANGE', sw.state)
-				if (sw.state === 'installed') {
-					console.log('ONSTATE INSTALLED')
-					var oldsw = navigator.serviceWorker.controller
-					console.log('oldsw', oldsw)
-					console.log('newsw', sw)
-					console.log('oldsw === newsw', oldsw === sw)
-					if (navigator.serviceWorker.controller !== null) {
-						console.log('EMITTING sw-updated', url)
-						this.emitLocal('sw-updated', url)
-					}
-					sw.onstatechange = null
-				}
-			}
+			this._handleServiceWorker(swr.installing)
 		}
+	}
+
+	_handleServiceWorker(sw) {
+		if (sw === undefined || sw === null) return
+		if (this.monitoredServiceWorkers.includes(sw)) return
+		this.monitoredServiceWorkers.push(sw)
+		console.log('_handleServiceWorker()', sw)
+		var listener = e => {
+			console.log(`*** statechange sw-${sw.state}`, sw.scriptURL)
+			this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
+			if (sw.state === 'redundant')
+				sw.removeEventListener('statechange', listener)
+		}
+		sw.addEventListener('statechange', listener)
 	}
 
 
@@ -204,4 +199,8 @@ export class ServiceWorkerPlugin {
 	}
 
 
+}
+
+function extractSwFromSwr(swr) {
+	return swr.installing || swr.waiting || swr.active
 }
