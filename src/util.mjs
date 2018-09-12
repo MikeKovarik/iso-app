@@ -7,3 +7,10 @@ export function remove(array, item) {
 	if (index !== -1)
 		array.splice(index, 1)
 }
+
+export function getAbsolutePath(...args) {
+	var path = args.pop()
+	var root = args.pop()
+	if (!root) root = location.href
+	return (new URL(path, root)).href
+}

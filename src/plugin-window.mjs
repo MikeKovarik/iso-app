@@ -1,9 +1,10 @@
 import platform from 'platform-detect'
 import {nw, electron, BrowserWindow} from './platforms.mjs'
-import {registerPlugin} from './plugin-core.mjs'
+import {plugin} from './plugin-core.mjs'
 
 
-class AppWindow {
+@plugin
+export class AppWindow {
 
 	pluginConstructor() {
 		// Handle window related events when to code is executed in window (instead of background script).
@@ -79,12 +80,11 @@ class AppWindow {
 
 }
 
-registerPlugin(AppWindow)
 
 
 
-
-class AppWindows {
+@plugin
+export class AppWindows {
 
 	pluginConstructor() {
 		// TODO: reimplement
@@ -108,5 +108,3 @@ class AppWindows {
 	}
 
 }
-
-registerPlugin(AppWindows)

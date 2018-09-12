@@ -1,61 +1,74 @@
 import platform from 'platform-detect'
-import {registerPlugin} from './plugin-core.mjs'
+import {plugin} from './plugin-core.mjs'
+import {getAbsolutePath} from './util.mjs'
 
 
-export default class AppPwa {
+@plugin
+export class PwaPlugin {
 
-	pluginConstructor() {
-		console.log('AppPwa constructor')
-		if (!('serviceWorker' in navigator)) return
-		var manifestPromise = this._getManifest()
-		this._readyPromises.push(manifestPromise)
-		this.serviceWorker = this.serviceWorker || this.backgroundScripts && this.backgroundScripts[0]// || 'serviceworker.js'
-		//this._registerServiceWorker()
-		//this.isUpdateAvailable.then(result => console.log(result ? 'UPDATE AVAILABLE' : 'UP TO DATE'))
-	}
+	async pluginConstructor() {
+		var metas = Array.from(document.getElementsByTagName('meta'))
+		var viewport = metas.find(meta => meta.name === 'viewport')
 
-	async _getManifest() {
-		var manifestMeta = document.head.querySelector('[rel="manifest"]')
-		if (!manifestMeta) return
-		this.manifest = await fetch(manifestMeta.href).then(res => res.json())
-		console.log('this.manifest', this.manifest)
-		this.name = this.manifest.name || this.manifest.short_name
-		console.log('this.manifest.name || this.manifest.short_name', this.manifest.name || this.manifest.short_name)
-		console.log('this.name', this.name)
-		if (this.manifest.icons)
-			this.icon = this.manifest.icons[this.manifest.icons.length - 1]
-		console.log('manifest loaded')
-	}
+		if (!viewport) {
+			createHead('meta', {
+				name: 'viewport',
+				content: 'width=device-width, initial-scale=1, user-scalable=no',
+			})
+		}
 
-	get serviceWorker() {
-		return this._serviceWorkerPath
-	}
-	set serviceWorker(newPath) {
-		this._serviceWorkerPath = newPath
-		this._registerServiceWorker()
-	}
-
-	_registerServiceWorker() {
-		if (!this.serviceWorker) return
-		this.isUpdateAvailable = new Promise(async resolve => {
-			var reg = await navigator.serviceWorker.register(this.serviceWorker)
-			if (navigator.serviceWorker.controller)
-				return resolve(false)
-			reg.onupdatefound = () => {
-				// Need to cache the object. It will be null on state change.
-				var installing = reg.installing
-				installing.onstatechange = () => {
-					if (installing.state === 'installed') {
-						resolve(navigator.serviceWorker.controller !== null)
-						installing.onstatechange = null
-					}
-				}
+		var icon = document.querySelector('link[rel="icon"]')
+		if (!icon) {
+			if (this.plugins.manifest) {
+				await this.plugins.manifest
+				var iconObject = this.manifest.icons[this.manifest.icons.length - 1]
+				createHead('link', {
+					rel: 'icon',
+					sizes: iconObject.sizes,
+					href: getAbsolutePath(this.manifestMeta.href, iconObject.src),
+				})
+			} else {
+				console.warn([
+					`Add meta tag 'icon' with a link to high-res png icon.`,
+					`such as <link rel="icon" sizes="192x192" href="highres-icon.png">`
+				].join('\n'))
 			}
-			this.serviceWorkerReg = reg
-		})
+		}
+
+		// Don't show warnings in production.
+		if (!platform.dev) return
+		// No need to show PWA warnings on any non-web platform.
+		if (!platform.web && !platform.pwa) return
+
+		//var manifest = metas.find(meta => meta.name === 'manifest')
+		// [name]
+		var themeColor = metas.find(meta => meta.name === 'theme-color')
+		var capable = metas.find(meta => meta.name === 'mobile-web-app-capable')
+
+		if (!themeColor)
+			console.warn([
+				`Add meta tag 'theme-icon' with your app's accent color.`,
+				`<meta name="theme-color" content="#37474F">`,
+			].join('\n'))
+
+		if (!capable)
+			console.warn([
+				`Missing 'mobile-web-app-capable' meta tag. Cannot be registered as PWA app.`,
+				`<meta name="mobile-web-app-capable" content="yes">`,
+			].join('\n'))
+
+		if (!this.plugins.serviceworker)
+			console.warn('PWA app should include service worker script')
+
+		if (!this.plugins.manifest)
+			console.warn('PWA app should include manifest.json')
 	}
 
 }
 
-registerPlugin(AppPwa)
-
+function createHead(name, attrs) {
+	let node = document.createElement(name)
+	for (var [attr, val] of Object.entries(attrs))
+		node.setAttribute(attr, val)
+	document.head.appendChild(node)
+}

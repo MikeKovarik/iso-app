@@ -1,8 +1,8 @@
 import platform from 'platform-detect'
-import {registerPlugin} from './plugin-core.mjs'
 import {EventEmitter} from './deps.mjs'
 import {moduleName, remove} from './util.mjs'
 import {electron} from './platforms.mjs'
+import {plugin} from './plugin-core.mjs'
 
 
 var EVENT = '__event__'
@@ -24,7 +24,8 @@ var electronEventName = `__${moduleName}__ipc__`
 */
 
 
-class AppIpc {
+@plugin
+export class AppIpc {
 
 	pluginConstructor() {
 		this.emitLocal = EventEmitter.prototype.emit
@@ -101,5 +102,3 @@ class AppIpc {
 	}
 
 }
-
-registerPlugin(AppIpc)

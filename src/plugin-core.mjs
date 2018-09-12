@@ -3,26 +3,29 @@ import {moduleName} from './util.mjs'
 
 
 var key = `__${moduleName}-internals__`
-export var internals = global[key] = global[key] || {registerPlugin}
+//export var internals = global[key] = global[key] || {registerPlugin}
+export var internals = global[key] = global[key] || {}
 
 function getPlugins(name) {
 	var key = name === 'App' ? 'plugins' : `plugins${name}`
 	return internals[key] = internals[key] || []
 }
 
+export function plugin(PluginOrTargetName) {
+	if (typeof PluginOrTargetName === 'string')
+		return Plugin => registerPlugin(Plugin, PluginOrTargetName)
+	else
+		registerPlugin(PluginOrTargetName)
+}
+
 // All plugins have to be pre-registered before the target class is registered (and used)
-export function registerPlugin(targetClassName, Plugin) {
-	if (Plugin === undefined)
-		[targetClassName, Plugin] = ['App', targetClassName]
-	console.log('registerPlugin()', Plugin.name)
+export function registerPlugin(Plugin, targetClassName = 'App') {
 	// TODO: make this work with other classes too (ManagedAppWindow)
 	if (internals.app) {
-		console.log('app created')
 		// App instance was already created before this plugin was loaded.
 		// Patch it in.
 		applyPlugin(internals.app, Plugin)
 	} else {
-		console.log('app not yet created')
 		// Plugin was loaded before the App was instatiated. Add the plugin to the list.
 		var plugins = getPlugins(targetClassName)
 		plugins.push(Plugin)
@@ -30,11 +33,15 @@ export function registerPlugin(targetClassName, Plugin) {
 }
 
 function applyPlugin(instance, Plugin) {
+	var name = Plugin.name.toLowerCase().slice().replace('plugin', '')
+	instance.plugins[name] = undefined
 	try {
 		extendClass(instance.constructor, Plugin)
 		var ctor = Plugin.prototype.pluginConstructor
-		if (ctor && instance)
-			ctor.call(instance)
+		if (ctor && instance) {
+			instance.plugins[name] = ctor.call(instance)
+			//instance._readyPromises.push(promise)
+		}
 	} catch(err) {
 		console.error(moduleName, `Plugin ${Plugin.name} failed`, err)
 	}

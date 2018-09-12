@@ -1,5 +1,5 @@
 import platform from 'platform-detect'
-import {registerPlugin} from './plugin-core.mjs'
+import {plugin} from './plugin-core.mjs'
 
 
 if (platform.uwp) {
@@ -10,7 +10,8 @@ if (platform.uwp) {
 	//var systemNavigationManager = Windows.UI.Core.SystemNavigationManager.getForCurrentView()
 }
 
-export default class AppTheme {
+@plugin
+export class AppTheme {
 
 	pluginConstructor() {
 		if (this.canDetectSystemTheme)
@@ -36,9 +37,3 @@ export default class AppTheme {
 	}
 
 }
-
-function useless() {
-	console.log('foo')
-}
-
-//registerPlugin(AppTheme)
