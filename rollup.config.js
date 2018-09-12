@@ -8,29 +8,55 @@ var nodeCoreModules = require('repl')._builtinLibs
 var external = [...nodeCoreModules, ...Object.keys(pkg.dependencies || {})]
 var globals = objectFromArray(external)
 
+var format = 'umd'
 
-export default {
-	//treeshake: false,
-	input: 'index.mjs',
-	output: [{
-		file: `index.js`,
-		format: 'umd',
-		name: pkg.name,
-		globals,
+var plugins = [
+	notify(),
+	babel()
+]
+
+var files = [
+	{
+		input: './index.mjs',
+		name: `${pkg.name}`,
 	}, {
-		file: `demoapp/node_modules/iso-app/index.js`,
-		format: 'umd',
-		name: pkg.name,
-		globals,
-	}],
+		input: './src/plugin-pwa.mjs',
+		name: `${pkg.name}-pwa`,
+	}, {
+		input: './src/plugin-manifest.mjs',
+		name: `${pkg.name}-manifest`,
+	}, {
+		input: './src/plugin-serviceworker.mjs',
+		name: `${pkg.name}-serviceworker`,
+	}, {
+		input: './src/plugin-window.mjs',
+		name: `${pkg.name}-window`,
+	}, {
+		input: './src/plugin-theme.mjs',
+		name: `${pkg.name}-theme`,
+	}/*, {
+		input: './src/plugin-ipc.mjs',
+		name: `${pkg.name}-plugin-ipc`,
+	}, {
+		input: './src/plugin-jumplist.mjs',
+		name: `${pkg.name}-plugin-jumplist`,
+	}*/
+]
+
+export default files.map(exp => ({
+	input: exp.input,
+	output: [{
+		file: `${exp.name}.js`,
+		name: exp.name,
+		format, globals,
+	}/*, {
+		file: `demo-multiwin/node_modules/iso-app/${exp.name}.js`,
+		name: exp.name,
+		format, globals,
+	}*/],
 	external,
-	plugins: [
-		notify(),
-		babel({
-			plugins: ['transform-class-properties'],
-		})
-	]
-}
+	plugins,
+}))
 
 function objectFromArray(arr) {
 	var obj = {}
