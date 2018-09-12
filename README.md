@@ -107,3 +107,7 @@ I'm using this project build multiple apps, each on a different platform with di
   * Website & PWA catalogue of user's NPM packages & Github repos.
   * Progressively enhanced under Electron or NW.JS. Turns into full blown GUI manager for NPM and Github once it can acces terminal. e.g. You can publish code to NPM and push commits to Github and manage your libraries with ease.
 * And a few yet unpublished websites & PWAs.
+
+## License
+
+Mike Kovařík, Mutiny.cz
