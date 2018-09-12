@@ -58,12 +58,6 @@ Philosophy of this project is to do as much as possible for you. `iso-app` autod
 
 Plugin `iso-app-serviceworker` auto installs builtin service worker (unless you specify your own) and starts caching app's files for offline use. It then uses Network API to either serve cached files while on cellular data or when offline, or bypasses the cache and serves fresh when on wifi or localhost.
 
-## Motivation
-
-I often develop apps with various target platform and audiences (simple web apps, PWAs, Windows UWP, NW.JS)
-
-And even though all these platforms run HTML & JS code, their APIs, restrictions (I'm frowning at you UWP)
-
 ## Plugins
 
 * **iso-app-window**
