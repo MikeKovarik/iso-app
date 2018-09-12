@@ -115,51 +115,36 @@ export class ServiceWorkerPlugin {
 
 	async registerServiceWorker(url) {
 		url = getAbsolutePath(url)
-		console.log('register', url)
 		// NOTE: we have to install SW every time the app loads in order to know if the file changed since
 		// the last time we installed it.
 		this.emitLocal('sw-register', url)
 		//console.log('register', url)
 		try {
-			console.log('-----------------------------------------------------------------------')
 			var oldSw = this.swr && extractSwFromSwr(this.swr)
 			this.swr = await navigator.serviceWorker.register(url)
 			var newSw = extractSwFromSwr(this.swr)
-			console.log('oldSw', oldSw)
-			console.log('newSw', newSw)
 			if (oldSw && newSw && oldSw !== newSw) {
 				// Detected change of URL of the worker. Completely different service worker is being installed.
 				// NOTE: This condition is true only is URL changes. It is false if the same worker
 				//       is just updated - new version of existing worker is loaded.
 				this.emit('sw-change', newSw.scriptURL, oldSw.scriptURL)
-				console.log('INSTALLING DIFFERENT SW')
-			} else if (!oldSw || !newSw) {
-				console.log('INSTALLING NEW ONE')
 			}
 			this._handleServiceWorkerReg(this.swr, true)
 			this.emitLocal('sw-registered', url)
 		} catch(err) {
-			console.warn('registering service worker failed', url, err)
 			this.emitLocal('sw-not-registered', err)
 		}
 	}
 
 	_handleServiceWorkerReg(swr, isNewReg = false) {
-		console.log('_handleServiceWorkerReg() SWR', swr)
 		this._handleServiceWorker(extractSwFromSwr(swr))
 		swr.onupdatefound = () => {
-			if (!swr.installing) return
-			if (swr.active) {
+			if (swr.installing && swr.active) {
 				// New versions of currently running service worker is being installed.
 				// Added custom 'sw-updating' event to signify that.
 				this.emit('sw-update', swr.installing.scriptURL)
-				console.log('********* SWAPPING OLD FOR NEW INSTALLING **********', isNewReg)
-			} else if (swr.installing) {
-				// Fresh installation of service worker. Not an update. None was installed before.
-				// All the 'sw-installing', 'sw-installed', etc... events are exposed by _handleServiceWorker().
-				console.log('****************** FRESH INSTALL *******************', isNewReg)
+				this._handleServiceWorker(swr.installing)
 			}
-			this._handleServiceWorker(swr.installing)
 		}
 	}
 
@@ -167,14 +152,7 @@ export class ServiceWorkerPlugin {
 		if (sw === undefined || sw === null) return
 		if (this.monitoredServiceWorkers.includes(sw)) return
 		this.monitoredServiceWorkers.push(sw)
-		console.log('_handleServiceWorker()', sw)
-		var listener = e => {
-			console.log(`*** statechange sw-${sw.state}`, sw.scriptURL)
-			this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
-			if (sw.state === 'redundant')
-				sw.removeEventListener('statechange', listener)
-		}
-		sw.addEventListener('statechange', listener)
+		sw.onstatechange = e => this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
 	}
 
 

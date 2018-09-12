@@ -60,6 +60,7 @@ async function onInstall(e) {
 		// this serviceworker file
 		//location.pathname,
 	])
+	//console.log('cached', cache)
 }
 
 async function onActivate() {
@@ -90,7 +91,7 @@ async function onFetch(e) {
 		// We won't be able to return it right away, but it'll be cached for the next time.
 		fetch(req)
 			.then(freshRes => maybeCache(req, freshRes, cachedRes))
-			.catch(err => console.warn('cannot cache/fetch', url, err))
+			.catch(err => console.warn('cannot cache/fetch', req.url, err))
 	}
 	return cachedRes || freshRes
 }
