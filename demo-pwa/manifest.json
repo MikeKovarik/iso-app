@@ -1,0 +1,15 @@
+{
+	"name": "iso-app Demo PWA",
+	"theme_color": "#2196f3",
+	"background_color": "#2196f3",
+	"display": "standalone",
+	"start_url": "./index.html",
+	"icons": [
+		{
+			"src": "./img/web_hi_res_512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		}
+	],
+	"splash_pages": null
+}

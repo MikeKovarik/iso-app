@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<!--
+	<base href="../">
+	-->
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+    <meta name="theme-color" content="#37474F">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="./manifest.json">
+	<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<!--
+	<img src="./icons/icon-128x128.png">
+-->
+
+	<button id="uninstall">uninstall SW</button>
+	<button id="info">print info</button>
+	<br>
+	<button id="clear">clear cache</button>
+	<button id="reload">reload page</button>
+
+	<pre id="log"></pre>
+<!--
+	<script>
+	if ('serviceWorker' in navigator) {
+		var url = 'proxy.js'
+		navigator.serviceWorker.register(url)
+			.then(() => console.log('installed', url))
+			.catch(() => console.log('failed', url))
+	}
+	</script>
+-->
+
+	<script src="../node_modules/platform-detect/index.js"></script>
+	<script src="../iso-app.js"></script>
+	<script src="../iso-app-manifest.js"></script>
+	<script src="../iso-app-serviceworker.js"></script>
+	<script src="./app.js"></script>
+
+</body>
+</html>

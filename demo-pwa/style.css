@@ -1,0 +1,36 @@
+* {
+	box-sizing: border-box;
+	outline: none;
+}
+
+html,
+body {
+	height: 100%;
+	padding: 0;
+	margin: 0;
+}
+
+html,
+body {
+	font-family: 'Segoe UI', 'Roboto', sans-serif;
+	background-color: #EEE;
+	padding: 16px;
+	font-size: 16px;
+}
+
+pre {
+	font-size: 14px;
+}
+
+button {
+	min-height: 40px;
+	padding: 10px 16px;
+	margin: 4px;
+	border: none;
+	border-radius: 3px;
+	background-color: #37474F;
+	color: #FFF;
+	font-weight: 600;
+	font-size: 16px;
+	text-transform: uppercase;
+}
