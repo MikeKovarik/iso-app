@@ -115,11 +115,15 @@ I'm using this project build multiple apps, each on a different platform with di
 
 #### Caching
 
-Once service worker is installed, it intercepts all HTTP requests and caches JS, HTML & CSS files (by their mime type, not just an extension, *so `.mjs` works out of the box too*) from the same origin.
+Once service worker is installed, it intercepts all HTTP requests and **automatically stores app's JS, HTML & CSS files** (by their mime type, not just an extension, *so `.mjs` works out of the box too*) from the same origin.
 
-For example if your domain is https://myapp.com, and your app requests `https://cdn.com/jquery.js` and `./style.css` which then loads `https://myapp.com/logo.png` we will cache `./style.css` and `/logo.png`, but ignore the dependency from other domain.
+For example if your domain is https://myapp.com, your app requests data from `https://google.com/calendar/my-events.json`, loads `https://cdn.com/jquery.js` and `./style.css` which then loads `https://myapp.com/logo.png`. We will only cache `./style.css` and `/logo.png`, but ignore the dependencies from and requests to other domains.
 
-`cache` property is exposed so you can manually add whatever files you like to the cache. The same way you would cache files in service worker.
+We also always cache `./` and `./index.html` (which is the same) and `./manifest.json`.
+
+Note that **we're caching relative paths** `./index.html`, not absolute `/index.html` paths! That way your app files dont mix up if you have multiple projects running under the same domain i.e. `https://localhost/my-project-3`.
+
+`cache` property is exposed so **you can manually [`.addAll()`](https://developer.mozilla.org/en-US/docs/Web/API/Cache/addAll) files** you want to the cache for when the app is offline. The same way you would cache files in service worker.
 ```js
 app.cache.addAll([
   '/',
@@ -165,7 +169,7 @@ iso-app will cache:
 
 </td></tr></table>
 
-Hoewever ES Modules (`import` / `export` syntax) cannot be easily crawled. We can only cache `./`, `./index.html`, `./style.css`, `./my-app.mjs` for you. And it's up to you to manually cache whatever `import`s you use in your ES modules.
+Insides of CSS files (`@imports` and `url()`) and JavaScript ES Modules (`import` / `export` syntax) cannot be easily analyzed. You will have to manually cache whatever `import`s you use in your ES modules.
 
 *NOTE: We're planning to fix this and fully automate imports as well in future releases.*
 
@@ -195,7 +199,15 @@ app.cache.addAll([
   './node_modules/platform-detect/index.js',
   './node_modules/iso-app/iso-app.js',
   './node_modules/iso-app/iso-app-serviceworker.js',
+  './bg.jpg'
 ])
+```
+
+```css
+/* style.css */
+body {
+  background-image: url('./bg.jpg')
+}
 ```
 
 </td><td>
@@ -212,6 +224,7 @@ And it's up to you to manually register:
 * `./node_modules/platform-detect/index.js`
 * `./node_modules/iso-app/iso-app.js`
 * `./node_modules/iso-app/iso-app-serviceworker.js`
+* `./bg.jpg`
 
 </td></tr></table>
 
