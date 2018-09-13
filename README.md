@@ -108,6 +108,114 @@ I'm using this project build multiple apps, each on a different platform with di
   * Progressively enhanced under Electron or NW.JS. Turns into full blown GUI manager for NPM and Github once it can acces terminal. e.g. You can publish code to NPM and push commits to Github and manage your libraries with ease.
 * And a few yet unpublished websites & PWAs.
 
+
+## API
+
+### `iso-app-serviceworker`
+
+#### Caching
+
+Once service worker is installed, it intercepts all HTTP requests and caches JS, HTML & CSS files (by their mime type, not just an extension, *so `.mjs` works out of the box too*) from the same origin.
+
+For example if your domain is https://myapp.com, and your app requests `https://cdn.com/jquery.js` and `./style.css` which then loads `https://myapp.com/logo.png` we will cache `./style.css` and `/logo.png`, but ignore the dependency from other domain.
+
+`cache` property is exposed so you can manually add whatever files you like to the cache. The same way you would cache files in service worker.
+```js
+app.cache.addAll([
+  '/',
+  './something/important.js',
+  '`https://cdn.com/jquery.js`',
+])
+```
+
+#### Autocaching & Manual caching
+
+iso-app automatically goes over all `<link>` and `<script>` tags and caches them. Given following `index.html`.
+
+<table><tr><td>
+
+```html
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <h1>hello world</h1>
+  <script src="./node_modules/platform-detect/index.js"></script>
+  <script src="./node_modules/iso-app/iso-app.js"></script>
+  <script src="./node_modules/iso-app/iso-app-serviceworker.js"></script>
+  <script src="./my-app.js"></script>
+</body>
+</html>
+```
+
+</td><td>
+
+iso-app will cache:
+
+* `./` (which is `./index.html`)
+* `./index.html`
+* `./style.css`
+* `./node_modules/platform-detect/index.js`
+* `./node_modules/iso-app/iso-app.js`
+* `./node_modules/iso-app/iso-app-serviceworker.js`
+* `./my-app.js`
+
+</td></tr></table>
+
+Hoewever ES Modules (`import` / `export` syntax) cannot be easily crawled. We can only cache `./`, `./index.html`, `./style.css`, `./my-app.mjs` for you. And it's up to you to manually cache whatever `import`s you use in your ES modules.
+
+*NOTE: We're planning to fix this and fully automate imports as well in future releases.*
+
+<table><tr><td>
+
+```html
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <h1>hello world</h1>
+  <script type="module" src="./my-app.mjs"></script>
+</body>
+</html>
+```
+
+```js
+// my-app.mjs
+import platform from './node_modules/platform-detect/index.js'
+import app from './node_modules/iso-app/iso-app.js'
+import './node_modules/iso-app/iso-app-serviceworker.js'
+
+app.cache.addAll([
+  './node_modules/platform-detect/index.js',
+  './node_modules/iso-app/iso-app.js',
+  './node_modules/iso-app/iso-app-serviceworker.js',
+])
+```
+
+</td><td>
+
+iso-app will cache:
+
+* `./` (which is `./index.html`)
+* `./index.html`
+* `./style.css`
+* `./my-app.mjs`
+
+And it's up to you to manually register:
+
+* `./node_modules/platform-detect/index.js`
+* `./node_modules/iso-app/iso-app.js`
+* `./node_modules/iso-app/iso-app-serviceworker.js`
+
+</td></tr></table>
+
+
 ## License
 
 Mike Kovařík, Mutiny.cz

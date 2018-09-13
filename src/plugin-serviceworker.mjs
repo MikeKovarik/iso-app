@@ -82,8 +82,8 @@ export class ServiceWorkerPlugin {
 			.concat(css, scripts)
 			.filter(url => url)
 			.filter(url => url.startsWith(location.origin))
-		this.swCache = await caches.open(this.cacheName)
-		this.swCache.addAll(deps)
+		this.cache = await caches.open(this.cacheName)
+		this.cache.addAll(deps)
 	}
 
 	_swSend(object) {
