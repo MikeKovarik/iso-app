@@ -36,7 +36,8 @@ export class ServiceWorkerPlugin {
 
 		this.on('sw-registered', () => {
 			this.updateServiceWorkerSettings()
-			this.cacheAppFiles()
+			this.openCache()
+			this.precache()
 		})
 
 		//var isServiceWorkerActive = navigator.serviceWorker.controller !== null
@@ -68,22 +69,31 @@ export class ServiceWorkerPlugin {
 		await Promise.all(promises)
 	}
 
+	cacheRefresh(force) {
+		// TODO: clears cache and refethes all their contents again
+		// if force, adds headers with max-age=0, removes etag or something that forces it.
+	}
+
 	get cacheName() {
 		if (this.swr)
 			return this.swr.scope.slice(location.origin.length + 1).replace(/\/$/, '')
 	}
 
-	async cacheAppFiles() {
-		if (!this.cache) return
-		console.log('cacheAppFiles()')
-		var css = Array.from(document.styleSheets).map(s => s.href)
-		var scripts = Array.from(document.scripts).map(s => s.src)
-		var deps = []
-			.concat(css, scripts)
-			.filter(url => url)
-			.filter(url => url.startsWith(location.origin))
-		this.cache = await caches.open(this.cacheName)
-		this.cache.addAll(deps)
+	async openCache() {
+		return this.cache = await caches.open(this.cacheName)
+	}
+
+	async precache(urls) {
+		if (!this.cache) await this.openCache()
+		if (!urls) {
+			var css = Array.from(document.styleSheets).map(s => s.href)
+			var scripts = Array.from(document.scripts).map(s => s.src)
+			urls = []
+				.concat(css, scripts)
+				.filter(url => url && url.startsWith(location.origin))
+		}
+		console.log('precache', urls)
+		await this.cache.addAll(urls)
 	}
 
 	_swSend(object) {
@@ -157,23 +167,32 @@ export class ServiceWorkerPlugin {
 
 
 
-	get cache() {
-		return this._cache === undefined ? true : this._cache 
+	get cacheLocal() {return this._cacheLocal}
+	get cacheRemote() {return this._cacheRemote}
+	get cacheMimes() {return this._cacheMimes}
+	get cacheStrategy() {return this._cacheStrategy}
+	set cacheLocal(newVal) {
+		this._cacheLocal = newVal
+		this.updateServiceWorkerSettings('cacheLocal') 
 	}
-	set cache(newVal) {
-		this._cache = newVal
-		this.updateServiceWorkerSettings('cache') 
-		if (newVal === false)
-			this.clearCache()
+	set cacheRemote(newVal) {
+		this._cacheRemote = newVal
+		this.updateServiceWorkerSettings('cacheRemote') 
+	}
+	set cacheMimes(newVal) {
+		this._cacheMimes = newVal
+		this.updateServiceWorkerSettings('cacheMimes') 
+	}
+	set cacheStrategy(newVal) {
+		this._cacheStrategy = newVal
+		this.updateServiceWorkerSettings('cacheStrategy') 
+		if (newVal === false) this.clearCache()
 	}
 
 	updateServiceWorkerSettings(key) {
-		if (key)
-			var keys = [key]
-		else
-			var keys = ['cache', 'cacheFirst', 'cacheLocalFiles', 'cacheRemoteFiles', 'cacheContinuousUpdate']
-		var options = pick(this, keys)
-		this._swSend(options)
+		var keys = key ? [key] : ['cacheStrategy', 'cacheLocal', 'cacheRemote']
+		console.log('updateServiceWorkerSettings', keys)
+		this._swSend(pick(this, keys))
 	}
 
 
