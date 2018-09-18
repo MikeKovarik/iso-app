@@ -1,71 +1,10 @@
+import {isOffline, prefferCache} from './sw-connection.mjs'
+import options, {setOptions} from './sw-options.mjs'
+
+
 self.skipWaiting()
-	.then(() => console.log('service worker restarted'))
-	.catch(err => console.log('service worker restart failed', err))
-
-
-var options = {
-	cacheLocal: true,
-	cacheRemote: true,
-
-	// Retrieve the resource from cache first and then fallback to network if needed.
-	// 'cache-only'    - First looks in the cache, if it fails, fetches from network.
-	//                 - Once the file is cached, it is never fetched or updated from network ever again.
-	// 'cache-first'   - First looks in the cache, if it fails, fetches from network.
-	//                 - Faster when offline because we're not waiting for fetch to fail.
-	//                 - Causes the app to lag one refresh behind latest version because 
-	// 'network-first' - First tries to fetch from network, if it fails, try retrieving from cache.
-	//                 - Faster and reliable when online because we're always getting fresh version of the app)
-	//                 - Slower when offline because we need to wait for fetch request to fail first.
-	// 'fastest'       - Simultaneously makes both fetch request and cache retrieval
-	//                 - and serves the fastest one.
-	cacheStrategy: 'offline-first',
-
-	// Mimes of files to cache
-	cacheMimes: [
-		'application/javascript',
-		'application/json',
-		'text/', //'text/html', 'text/css', 'text/plain',
-		'image/', //'image/png',
-		'font/',
-	],
-}
 
 function noop() {}
-
-
-var prefferCache
-var isOffline
-var allowCacheRefresh
-if (navigator.connection) {
-	// NetworkInformation API available
-	var conn = navigator.connection
-	conn.addEventListener('change', updateNetInfo)
-} else {
-	// Not available here. Shim it at least.
-	var isMobile
-	var conn = {
-		saveData: isMobile,
-		type: isMobile ? 'cellular' : 'wifi',
-		downlink: isMobile ? 2 : 10,
-	}
-}
-updateNetInfo()
-
-function updateNetInfo() {
-	isOffline = conn.type === 'none'
-			|| conn.downlink === 0
-			|| conn.downlinkMax === 0
-	prefferCache = isOffline
-			|| conn.saveData
-			|| conn.type === 'cellular'
-			|| conn.type === 'none'
-			|| conn.effectiveType === 'slow-2g'
-			|| conn.effectiveType === '2g'
-			|| conn.downlink < 1
-			|| conn.downlinkMax < 1
-	allowCacheRefresh = conn.type !== 'cellular'
-}
-
 
 // We don't have access to manifest.json and fetching it would take some time.
 // Plus we cannot know for sure it even exists.
@@ -73,16 +12,14 @@ var cacheName = self.registration.scope.slice(location.origin.length + 1).replac
 
 var cache
 
-
 // Install the service worker.
 self.addEventListener('install',  e => e.waitUntil(onInstall(e)))
-self.addEventListener('activate', onActivate)
+self.addEventListener('activate', () => self.clients.claim())
 self.addEventListener('fetch',    onFetch)
 
 self.addEventListener('message', ({data}) => {
 	switch (data.type) {
-		case 'options':  return Object.assign(options, data.options)
-		//case 'prefetch': return cache.addAll(data.urls).catch(noop)
+		case 'options': setOptions(data.options)
 	}
 })
 
@@ -95,25 +32,17 @@ async function notify(res) {
 
 // 'install' event fires when this file changes.
 async function onInstall(e) {
+	console.log('### INSTALL ###', location.href)
+	setOptions(new URL(location).searchParams)
 	// Force current version of service worker to activate.
 	self.skipWaiting()
-	console.log('### INSTALL ###', location)
-	/*try {
-		for (var [key, val] of new URL(location).searchParams)
-			options[key] = val
-	} catch(err) {
-		console.warn('couldnt load url options')
-	}*/
+	//console.log('### INSTALL ###', location)
 	cache = await caches.open(cacheName)
 	// Path is relative to the origin, not the app directory.
 	await cache.addAll(['./', './index.html'])
 	// Fail silently. manifest.json is just a guess, not a must for app to have.
 	await cache.add('manifest.json').catch(noop)
-	//console.log('cached', cache)
-}
-
-async function onActivate() {
-	self.clients.claim()
+	////console.log('cached', cache)
 }
 
 async function onFetch(e) {
@@ -130,7 +59,7 @@ async function onFetch(e) {
 }
 
 async function cacheFirst(req) {
-	console.log('cacheFirst', req.url)
+	//console.log('cacheFirst', req.url)
 	try {
 		return await caches.match(req)
 	} catch(err) {
@@ -139,7 +68,7 @@ async function cacheFirst(req) {
 }
 
 async function networkFirst(req) {
-	console.log('networkFirst', req.url)
+	//console.log('networkFirst', req.url)
 	try {
 		return await fetchAndCache(req)
 	} catch(err) {
@@ -148,7 +77,7 @@ async function networkFirst(req) {
 }
 
 async function dynamic(req) {
-	console.log('dynamic', req.url)
+	//console.log('dynamic', req.url)
 	if (isOffline || prefferCache)
 		return cacheFirst(req)
 	else
@@ -159,7 +88,7 @@ async function dynamic(req) {
 // The fastest is usually cache (if previously cached). The fetche response will
 // be cached to ensure this strategy is at most one refresh behind latest version.
 async function fastest(e) {
-	console.log('fastest', req.url)
+	//console.log('fastest', req.url)
 	// Always look in the cache. Prevent unnecessary fetch when we're offline.
 	if (isOffline)
 		var promises = [caches.match(e.request)]
@@ -174,12 +103,15 @@ async function fastest(e) {
 
 // Similar to fastest() but only makes the network fetch() on fast connections.
 async function hybrid(e) {
+	var req = e.request
+	console.log('get ', req.url)
 	// Always look in the cache. Prevent unnecessary fetch when we're on cellular or weak connection.
 	if (isOffline || prefferCache)
-		var promises = [caches.match(e.request)]
+		var promises = [caches.match(req)]
 	else
-		var promises = [caches.match(e.request), fetchAndCache(e.request)]
+		var promises = [caches.match(req), fetchAndCache(req)]
 	// The fastest of the (up to) two methods serves the data.
+	Promise.race(promises).then(res => console.log('race', req.url, res))
 	e.respondWith(Promise.race(promises))
 	// waitUntil() prevents worker from getting killed until the cache is updated.
 	if (promises.length > 1)

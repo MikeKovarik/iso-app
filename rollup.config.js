@@ -26,14 +26,18 @@ var files = [
 		input: './src/plugin-manifest.mjs',
 		name: `${pkg.name}-manifest`,
 	}, {
-		input: './src/plugin-serviceworker.mjs',
-		name: `${pkg.name}-serviceworker`,
-	}, {
 		input: './src/plugin-window.mjs',
 		name: `${pkg.name}-window`,
 	}, {
 		input: './src/plugin-theme.mjs',
 		name: `${pkg.name}-theme`,
+	}, {
+		input: './src/plugin-serviceworker.mjs',
+		name: `${pkg.name}-serviceworker`,
+	}, {
+		input: './src/sw.mjs',
+		name: `serviceworker`,
+		format: 'iife',
 	}/*, {
 		input: './src/plugin-ipc.mjs',
 		name: `${pkg.name}-plugin-ipc`,
@@ -48,12 +52,9 @@ export default files.map(exp => ({
 	output: [{
 		file: `${exp.name}.js`,
 		name: exp.name,
-		format, globals,
-	}/*, {
-		file: `demo-multiwin/node_modules/iso-app/${exp.name}.js`,
-		name: exp.name,
-		format, globals,
-	}*/],
+		format: exp.format || format,
+		globals,
+	}],
 	external,
 	plugins,
 }))

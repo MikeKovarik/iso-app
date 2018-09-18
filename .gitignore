@@ -366,5 +366,6 @@ __pycache__/
 
 iso-app.js
 iso-app-*.js
+serviceworker.js
 
 package-lock.json

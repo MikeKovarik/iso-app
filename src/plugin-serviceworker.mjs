@@ -125,13 +125,15 @@ export class ServiceWorkerPlugin {
 
 	async registerServiceWorker(url) {
 		url = getAbsolutePath(url)
+		//var urlWithOptions = `${url}?options=${encodeURIComponent(this)}`
+		var urlWithOptions = `${url}?${this.getSwOptionsParams()}`
 		// NOTE: we have to install SW every time the app loads in order to know if the file changed since
 		// the last time we installed it.
 		this.emitLocal('sw-register', url)
 		//console.log('register', url)
 		try {
 			var oldSw = this.swr && extractSwFromSwr(this.swr)
-			this.swr = await navigator.serviceWorker.register(url)
+			this.swr = await navigator.serviceWorker.register(urlWithOptions)
 			var newSw = extractSwFromSwr(this.swr)
 			if (oldSw && newSw && oldSw !== newSw) {
 				// Detected change of URL of the worker. Completely different service worker is being installed.
@@ -165,6 +167,27 @@ export class ServiceWorkerPlugin {
 		sw.onstatechange = e => this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
 	}
 
+	getSwOptions(keys) {
+		if (!keys)
+			keys = ['cacheStrategy', 'cacheLocal', 'cacheRemote']
+		return pick(this, keys)
+	}
+
+	getSwOptionsParams(keys) {
+		var params = new URLSearchParams
+		for (var [key, val] of Object.entries(this.getSwOptions(keys)))
+			params.set(key, val)
+		return params.toString()
+	}
+
+	updateServiceWorkerSettings(key) {
+		var options = key ? this[key] : this.getSwOptions()
+		var message = {
+			type: 'options',
+			options
+		}
+		this._swSend(message)
+	}
 
 
 	get cacheLocal() {return this._cacheLocal}
@@ -187,12 +210,6 @@ export class ServiceWorkerPlugin {
 		this._cacheStrategy = newVal
 		this.updateServiceWorkerSettings('cacheStrategy') 
 		if (newVal === false) this.clearCache()
-	}
-
-	updateServiceWorkerSettings(key) {
-		var keys = key ? [key] : ['cacheStrategy', 'cacheLocal', 'cacheRemote']
-		console.log('updateServiceWorkerSettings', keys)
-		this._swSend(pick(this, keys))
 	}
 
 
