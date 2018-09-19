@@ -49,9 +49,7 @@ export class ServiceWorkerPlugin {
 
 		console.log('this.autoRegister', this.autoRegister)
 		if (this.autoRegister) {
-			//this._defaultWorkerPath = './serviceworker.js'
-			this._defaultWorkerPath = getAbsolutePath('./serviceworker.js')
-			this.registerServiceWorker(this._defaultWorkerPath)
+			this.registerServiceWorker()
 		}
 	}
 
@@ -123,16 +121,20 @@ export class ServiceWorkerPlugin {
 		}
 	}
 
+	// NOTE: we have to install SW every time the app loads in order to know if the file changed since
+	// the last time we installed it.
 	async registerServiceWorker(url) {
+		if (!url)
+			url = getAbsolutePath('./serviceworker.js')
 		url = getAbsolutePath(url)
-		//var urlWithOptions = `${url}?options=${encodeURIComponent(this)}`
-		var urlWithOptions = `${url}?${this.getSwOptionsParams()}`
-		// NOTE: we have to install SW every time the app loads in order to know if the file changed since
-		// the last time we installed it.
 		this.emitLocal('sw-register', url)
-		//console.log('register', url)
 		try {
 			var oldSw = this.swr && extractSwFromSwr(this.swr)
+			var urlWithOptions = `${url}?${this.getSwOptionsParams()}`
+			var controllerChangedPromise = new Promise(resolve => {
+				navigator.serviceWorker.addEventListener('controllerchange', resolve)
+			})
+			controllerChangedPromise.then(() => console.log('## controllerchange'))
 			this.swr = await navigator.serviceWorker.register(urlWithOptions)
 			var newSw = extractSwFromSwr(this.swr)
 			if (oldSw && newSw && oldSw !== newSw) {
@@ -141,30 +143,34 @@ export class ServiceWorkerPlugin {
 				//       is just updated - new version of existing worker is loaded.
 				this.emit('sw-change', newSw.scriptURL, oldSw.scriptURL)
 			}
-			this._handleServiceWorkerReg(this.swr, true)
+			this._handleServiceWorkerReg(this.swr)
 			this.emitLocal('sw-registered', url)
 		} catch(err) {
 			this.emitLocal('sw-not-registered', err)
 		}
 	}
 
-	_handleServiceWorkerReg(swr, isNewReg = false) {
+	_handleServiceWorkerReg(swr) {
 		this._handleServiceWorker(extractSwFromSwr(swr))
 		swr.onupdatefound = () => {
 			if (swr.installing && swr.active) {
 				// New versions of currently running service worker is being installed.
 				// Added custom 'sw-updating' event to signify that.
 				this.emit('sw-update', swr.installing.scriptURL)
-				this._handleServiceWorker(swr.installing)
+				this._handleServiceWorker(swr.installing, 'updated')
 			}
 		}
 	}
 
-	_handleServiceWorker(sw) {
+	_handleServiceWorker(sw, anotherInstalledEvent) {
 		if (sw === undefined || sw === null) return
 		if (this.monitoredServiceWorkers.includes(sw)) return
 		this.monitoredServiceWorkers.push(sw)
-		sw.onstatechange = e => this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
+		sw.onstatechange = e => {
+			this.emitLocal(`sw-${sw.state}`, sw.scriptURL)
+			if (anotherInstalledEvent && sw.state === 'installed')
+				this.emitLocal(`sw-${anotherInstalledEvent}`, sw.scriptURL)
+		}
 	}
 
 	getSwOptions(keys) {

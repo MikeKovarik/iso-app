@@ -1,4 +1,4 @@
-var defaultOptions = {
+export default {
 	cacheLocal: true,
 	cacheRemote: true,
 
@@ -23,16 +23,4 @@ var defaultOptions = {
 		'image/', //'image/png',
 		'font/',
 	],
-}
-
-var options = Object.assign({}, defaultOptions)
-
-export default options
-
-export function setOptions(newOptions) {
-	for (var [key, val] of Object.entries(newOptions))
-		if (val === undefined)
-			options[key] = defaultOptions[key]
-		else
-			options[key] = val
 }
